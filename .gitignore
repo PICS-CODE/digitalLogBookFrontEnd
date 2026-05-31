@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 node_modules/
 build/
 dist/
@@ -6,3 +7,9 @@ coverage/
 *.log
 .env*
 !.env.example
+=======
+node_modules
+.env.local
+dist
+.DS_Store
+>>>>>>> ce4029cbef291832660c24a9f67b4ff2e0be5251
