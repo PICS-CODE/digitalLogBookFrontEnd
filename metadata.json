@@ -1,0 +1,6 @@
+{
+  "name": "PLRC Digital Logbook",
+  "description": "A digital logbook and RFID simulation scanner for the Provincial Learning and Resource Center (PLRC) Cagayan. Manage members, register users, and track active services.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
