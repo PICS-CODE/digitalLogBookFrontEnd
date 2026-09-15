@@ -21,7 +21,9 @@
     "motion": "^12.23.24",
     "qrcode": "^1.5.4",
     "react": "^19.0.1",
+    "react-barcode": "^1.6.1",
     "react-dom": "^19.0.1",
+    "sweetalert2": "^11.26.25",
     "vite": "^6.2.3"
   },
   "devDependencies": {

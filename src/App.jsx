@@ -22,6 +22,14 @@ import { ClientDashboard } from "./components/ClientDashboard";
 // import { StaffLogin } from "./components/StaffLogin"; // Import new StaffLogin component
 import { ClientLogin } from "./components/ClientLogin";
 import { QRRegistration } from "./components/QRRegistration";
+import { api } from "./services/api";
+
+const LEGACY_LOCAL_ADMIN_RFIDS = new Set(["superadmin", "0000004513", "admin"]);
+const LEGACY_LOCAL_ADMIN_IDS = new Set(["SuperAdmin", "Admin-Staff"]);
+
+const withoutLegacyLocalAdminSeeds = (userList) => userList.filter(
+  user => !LEGACY_LOCAL_ADMIN_RFIDS.has(user.rfid) && !LEGACY_LOCAL_ADMIN_IDS.has(user.id)
+);
 
 export default function App() {
   const [users, setUsers] = useState([]);
@@ -32,6 +40,8 @@ export default function App() {
   const [adminRole, setAdminRole] = useState(null);
   const [showNewUserModal, setShowNewUserModal] = useState(false);
   const [prefilledRfid, setPrefilledRfid] = useState("");
+  const [manualRfid, setManualRfid] = useState("");
+  const [manualRfidScan, setManualRfidScan] = useState(null);
 
   // Unified Session state
   const [loggedInClient, setLoggedInClient] = useState(null);
@@ -108,49 +118,7 @@ export default function App() {
       }
     }
 
-    // Data Migration & Repair: Ensure core test accounts always exist with correct roles
-    const coreAccounts = [
-      {
-        id: "SuperAdmin",
-        rfid: "0000004513",
-        password: "",
-        lastName: "Dannug",
-        givenName: "Jerome",
-        role: "superadmin",
-        patronType: "LGU Official",
-        institution: "Provincial Government"
-      },
-      {
-        id: "Admin-Staff",
-        rfid: "admin",
-        password: "password123",
-        lastName: "Villanueva",
-        givenName: "Jerome",
-        role: "admin",
-        patronType: "Staff",
-        institution: "CPLRC"
-      },
-      {
-        id: "user-jerome-dannug",
-        rfid: "1185391500",
-        password: "",
-        lastName: "Dannug",
-        givenName: "Jerome",
-        role: "client",
-        patronType: "Student",
-        institution: "Cagayan State University"
-      }
-    ];
-
-    coreAccounts.forEach(core => {
-      const index = finalUsers.findIndex(u => u.rfid === core.rfid || u.id === core.id);
-      if (index === -1) {
-        finalUsers = [core, ...finalUsers];
-      } else {
-        // Update existing to ensure they have the correct role/rfid for login
-        finalUsers[index] = { ...finalUsers[index], role: core.role, rfid: core.rfid };
-      }
-    });
+    finalUsers = withoutLegacyLocalAdminSeeds(finalUsers);
 
     setUsers(finalUsers);
     localStorage.setItem("plrc_users", JSON.stringify(finalUsers));
@@ -175,23 +143,24 @@ export default function App() {
       } catch (e) {}
     }
 
-    // Always pre-populate a realistic "Your account has been created" email for Jerome Dannug on startup
-    const hasJeromeEmail = emailList.some((em) => em.username === "1185391500");
-    if (!hasJeromeEmail) {
-      const initialWelcomeEmail = {
-        id: "email-initial-jerome",
-        recipientEmail: "romedannug@gmail.com",
-        recipientName: "Jerome Dannug",
-        username: "1185391500",
-        password: "password123",
-        loginLink: window.location.origin + "/#/client/login",
-        timestamp: "Just now",
-        unread: true,
-      };
-      emailList = [initialWelcomeEmail, ...emailList];
-    }
+    emailList = emailList.filter((email) => email.username !== "1185391500");
     setSimulatedEmails(emailList);
     localStorage.setItem("plrc_simulated_emails", JSON.stringify(emailList));
+  }, []);
+
+  // Prefer server data, with the original local data retained as an offline fallback.
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([api.users.list(), api.logs.list(), api.qrClients.list()])
+      .then(([serverUsers, serverLogs, serverQrClients]) => {
+        if (!cancelled) {
+          setUsers(serverUsers);
+          setLogs(serverLogs);
+          setQrClients(serverQrClients);
+        }
+      })
+      .catch((error) => console.warn("Backend unavailable; using local data.", error));
+    return () => { cancelled = true; };
   }, []);
 
   // Sync to separate routes via URL Hash!
@@ -300,100 +269,80 @@ export default function App() {
     localStorage.setItem("plrc_qr_clients", JSON.stringify(updatedList));
   };
 
-  const handleAddQrClient = (newClient) => {
-    const updated = [newClient, ...qrClients];
-    saveQrClients(updated);
+  const handleAddQrClient = async (newClient) => {
+    try {
+      const saved = await api.qrClients.create(newClient);
+      setQrClients((current) => [saved, ...current]);
+    } catch (error) {
+      alert(`Unable to save QR registration: ${error.message}`);
+      throw error;
+    }
   };
 
-  const handleDeleteQrClient = (clientId) => {
-    const updated = qrClients.filter((c) => c.id !== clientId);
-    saveQrClients(updated);
+  const handleDeleteQrClient = async (clientId) => {
+    try {
+      await api.qrClients.remove(clientId);
+      setQrClients((current) => current.filter((c) => c.id !== clientId));
+    } catch (error) { alert(`Unable to delete QR registration: ${error.message}`); }
   };
 
-  // When admin creates a user -> append to user list AND send simulated credentials email
-  const handleAddUser = (newUser) => {
-    const updated = [newUser, ...users];
-    saveUsers(updated);
-
-    // Dynamic Outbound email generator matching the exact user screenshot credentials format
-    const newEmail = {
-      id: `email-${Date.now()}`,
-      recipientEmail: newUser.email || "guest@cagayan.gov.ph",
-      recipientName: `${newUser.givenName} ${newUser.lastName}`,
-      username: newUser.rfid,
-      password: newUser.password || "password123",
-      loginLink: window.location.origin + "/#/client/login",
-      timestamp: new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      unread: true,
-    };
-    const updatedEmails = [newEmail, ...simulatedEmails];
-    setSimulatedEmails(updatedEmails);
-    localStorage.setItem(
-      "plrc_simulated_emails",
-      JSON.stringify(updatedEmails),
-    );
-
-    // Show floating inbound notification alert toast on the parent window
-    setShowEmailToast({
-      show: true,
-      name: `${newUser.givenName} ${newUser.lastName}`,
-      email: newUser.email || "guest@cagayan.gov.ph",
-    });
-    // Automatically fade out after 8 seconds
-    setTimeout(() => {
-      setShowEmailToast((prev) => ({ ...prev, show: false }));
-    }, 8000);
-  };
-
-  const handleDeleteUser = (userId) => {
-    const updated = users.filter((u) => u.id !== userId);
+  // Save the user through the API; the backend handles the real registration email.
+  const handleAddUser = async (newUser) => {
+    let savedUser;
+    try { savedUser = await api.users.create(newUser); }
+    catch (error) { alert(`Unable to create member: ${error.message}`); return; }
+    const updated = [savedUser, ...users];
     saveUsers(updated);
   };
 
-  const handleUpdateUser = (updatedUser) => {
-    const updated = users.map((u) =>
-      u.id === updatedUser.id ? updatedUser : u,
-    );
-    saveUsers(updated);
+  const handleDeleteUser = async (userId) => {
+    try {
+      await api.users.remove(userId);
+      setUsers((current) => current.filter((u) => u.id !== userId));
+    } catch (error) { alert(`Unable to delete member: ${error.message}`); }
   };
 
-  const handleAddLog = (newLog) => {
-    setLogs((currentLogs) => {
-      const updated = [newLog, ...currentLogs];
+  const handleUpdateUser = async (updatedUser) => {
+    try {
+      const saved = await api.users.update(updatedUser);
+      setUsers((current) => current.map((u) => u.id === saved.id ? saved : u));
+    } catch (error) { alert(`Unable to update member: ${error.message}`); }
+  };
+
+  const handleAddLog = async (newLog) => {
+    try {
+      const saved = await api.logs.create(newLog);
+      setLogs((currentLogs) => {
+      const updated = [saved, ...currentLogs];
       localStorage.setItem("plrc_logs", JSON.stringify(updated));
       return updated;
     });
+    } catch (error) { alert(`Unable to save visit log: ${error.message}`); }
   };
 
-  const handleUpdateLog = (updatedLog) => {
-    setLogs((currentLogs) => {
+  const handleUpdateLog = async (updatedLog) => {
+    try {
+      const saved = await api.logs.update(updatedLog);
+      setLogs((currentLogs) => {
       const updated = currentLogs.map((l) =>
-        l.id === updatedLog.id ? updatedLog : l,
+        l.id === saved.id ? saved : l,
       );
       localStorage.setItem("plrc_logs", JSON.stringify(updated));
       return updated;
     });
+    } catch (error) { alert(`Unable to update visit log: ${error.message}`); }
   };
 
-  const handleClearLogs = () => {
-    saveLogs([]);
+  const handleClearLogs = async () => {
+    try { await api.logs.clear(); saveLogs([]); }
+    catch (error) { alert(`Unable to clear visit logs: ${error.message}`); }
   };
 
-  const handleCheckOutUser = (logId) => {
-    const updated = logs.map((l) => {
-      if (l.id === logId) {
-        return {
-          ...l,
-          checkOutTime: new Date().toISOString(),
-          status: "COMPLETED",
-        };
-      }
-      return l;
-    });
-    saveLogs(updated);
+  const handleCheckOutUser = async (logId) => {
+    try {
+      const saved = await api.logs.checkout(logId);
+      setLogs((current) => current.map((log) => log.id === saved.id ? saved : log));
+    } catch (error) { alert(`Unable to check out member: ${error.message}`); }
   };
 
   // Unified Login Success Handler
@@ -439,6 +388,7 @@ export default function App() {
   // Determine if we should render navigation chrome headers
   const isStandaloneMode =
     currentView === "STANDALONE" || currentView === "QR_SCANNER" || currentView === "CPLRC_SUB_QR" || currentView === "ADMIN_LOGIN" || currentView === "CLIENT_LOGIN";
+  const isQrRegistrationMode = currentView === "QR_REGISTRATION";
 
   return (
     <div className="bg-slate-950 min-h-screen relative flex flex-col font-sans antialiased text-slate-100 selection:bg-amber-500 selection:text-slate-950 text-left">
@@ -673,7 +623,7 @@ export default function App() {
       )}
 
       {/* Upper Navigation Portal Header bar - HIDDEN IN STANDALONE MODE FOR PURE HARDWARE FEEL */}
-      {!isStandaloneMode ? (
+      {currentView !== "CLIENT" && !isQrRegistrationMode && (isStandaloneMode ? (
         <header className="bg-slate-900 border-b border-slate-800 shrink-0 sticky top-0 z-40 shadow-md">
           <div className="max-w-7xl mx-auto px-4 sm:px-5 py-2 flex flex-col sm:flex-row items-center justify-between gap-3">
             {/* Main Title branding - Elegant, Compact Typography */}
@@ -692,34 +642,6 @@ export default function App() {
                 <p className="text-[9px] text-slate-400 font-mono tracking-wider uppercase mt-0.5">
                   CPLRC • Digital Logbook Station
                 </p>
-              </div>
-            </div>
-
-            {/* Quick System Status Ribbons - Dense Metadata Information */}
-            <div className="hidden lg:flex items-center gap-4 text-slate-400 border-l border-slate-800 pl-4 font-mono text-[10px]">
-              {/* Core Email Simulation Trigger Button */}
-              <button
-                onClick={() => setIsMailboxOpen(true)}
-                className="flex items-center gap-2 px-2.5 py-1 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 rounded-lg border border-blue-500/20 transition-all cursor-pointer font-bold"
-              >
-                <Mail size={12} className="text-blue-400" />
-                <span className="uppercase tracking-wider">
-                  Inbox Simulation
-                </span>
-                <span className="bg-blue-500 text-white text-[9px] px-1.5 py-0.2 rounded font-mono font-black animate-pulse">
-                  {simulatedEmails.filter((e) => e.unread).length || "NEW"}
-                </span>
-              </button>
-
-              <div className="flex items-center gap-1.5">
-                <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>STATION: TERMINAL-01</span>
-              </div>
-              <div className="flex items-center gap-1.5 font-sans">
-                <span>
-                  MEMBERS:{" "}
-                  <strong className="text-slate-100">{users.length}</strong>
-                </span>
               </div>
             </div>
 
@@ -794,7 +716,7 @@ export default function App() {
             <span className="text-slate-300 font-bold uppercase text-[9px] sm:text-[10px]">
               {currentView === "QR_SCANNER" || currentView === "CPLRC_SUB_QR"
                 ? "DEDICATED PORTABLE QR DISPATCH CHECK-IN ROUTE"
-                : "SECURE STANDALONE KIOSK ROUTE"}
+                : " Cagayan Provincial Learning and Resource Center"}
             </span>
           </div>
           <div className="flex items-center gap-3">
@@ -827,29 +749,23 @@ export default function App() {
             </button>
           </div>
         </div>
-      )}
+      ))}
 
       {/* Main Screen Router layout container */}
       <main className="flex-1 w-full relative">
         {currentView === "KIOSK" || currentView === "STANDALONE" || currentView === "QR_SCANNER" || currentView === "CPLRC_SUB_QR" ? (
           <div
-            className={isStandaloneMode ? "py-4 md:py-8 bg-slate-950" : "py-5"}
+            className={isStandaloneMode || isQrRegistrationMode ? "py-0 bg-slate-950" : "py-5"}
           >
             {/* Header info guidance */}
             {!isStandaloneMode && (
               <div className="max-w-4xl mx-auto mb-5 px-4 text-center select-none">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-[#38BDF8] font-mono">
-                  WALK-UP TERMINAL VIEW ROUTE
-                </span>
+                
                 <h2 className="text-sm sm:text-base font-extrabold text-slate-100 tracking-tight mt-1 uppercase">
                   TAP YOUR PHYSICAL RFID CARD TO START LOGGING
                 </h2>
                 <div className="h-[2px] w-12 bg-[#38BDF8] mx-auto mt-2 rounded-full" />
-                <p className="text-[11px] text-slate-400 max-w-md mx-auto mt-2">
-                  This simulated view replicates how the hardware terminal
-                  screen behaves physically inside the Cagayan Library. You can
-                  register or simulate swipes.
-                </p>
+              
               </div>
             )}
 
@@ -859,11 +775,21 @@ export default function App() {
               logs={logs}
               qrClients={qrClients}
               onAddLog={handleAddLog}
+              onAddQrClient={handleAddQrClient}
+              onQrClientsRefresh={saveQrClients}
               onUpdateLog={handleUpdateLog}
               onRegisterClick={() => setShowNewUserModal(true)} // This will now open the admin's add user modal
               initialScanMethod={currentView === "QR_SCANNER" || currentView === "CPLRC_SUB_QR" ? "WEBCAM" : "RFID"}
               initialTerminalLocation={currentView === "CPLRC_SUB_QR" ? "CPLRC SUB" : "1F WALK-IN RECEPTION"}
               onlyQrMode={currentView === "QR_SCANNER" || currentView === "CPLRC_SUB_QR"}
+              manualRfidScan={manualRfidScan}
+              manualRfid={manualRfid}
+              onManualRfidChange={setManualRfid}
+              onManualRfidSubmit={() => {
+                const code = manualRfid.trim();
+                if (!code) return;
+                setManualRfidScan({ code, id: Date.now() });
+              }}
             />
           </div>
         ) : currentView === "ADMIN" ? (
@@ -923,14 +849,14 @@ export default function App() {
       </main>
 
       {/* Footer bar - Rich Monospace Diagnostics - HIDDEN IN STANDALONE MODE */}
-      {!isStandaloneMode && (
+      {!isStandaloneMode && !isQrRegistrationMode && currentView !== "CLIENT" && (
         <footer className="bg-slate-900 text-slate-400 border-t border-slate-800 py-3 text-[10px] font-mono shrink-0 select-none">
           <div className="max-w-7xl mx-auto px-4 sm:px-5 flex flex-col sm:flex-row justify-between items-center gap-2">
             <div className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
               <span>SYSTEM STATE: ACTIVE PERSISTENCE</span>
               <span className="text-slate-850">|</span>
-              <span>INDEX: PLRC_CAPITOL_V2.5</span>
+              <span>INDEX: CPLRC_CAPITOL_V2.5</span>
             </div>
 
             <div className="text-slate-500 text-center sm:text-left text-[9.5px]">

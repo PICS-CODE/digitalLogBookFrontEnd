@@ -26,12 +26,58 @@ import {
   ChevronRight,
   QrCode,
   Download,
+  BookOpen,
 } from "lucide-react";
 import { SERVICE_OPTIONS } from "../data/mockData";
 import { PLRCLogo } from "./Logo";
 import QRCode from "qrcode";
+import Swal from "sweetalert2";
 
 import { QRRegistration } from "./QRRegistration";
+import { EResourceManager } from "./EResourceManager";
+import { api } from "../services/api";
+
+const DEFAULT_DISCUSSION_ROOM_TIME_SLOTS = [
+  "7:30am-8:30am",
+  "8:30am-9:30am",
+  "9:30am-10:30am",
+  "10:30am-11:30am",
+  "11:30am-12:30pm",
+  "12:30pm-1:30pm",
+  "1:30pm-2:30pm",
+  "2:30pm-3:30pm",
+  "3:30pm-4:30pm",
+  "4:30pm-5:30pm",
+  "5:30pm-6:30pm",
+];
+
+const STANDARD_RESERVATION_TIME_SLOTS = [
+  "AM (8:00 AM - 12:00 PM)",
+  "PM (1:00 PM - 5:00 PM)",
+  "Full Day (8:00 AM - 5:00 PM)",
+];
+
+const getDefaultRoomTimeSlots = (roomName) =>
+  roomName === "Discussion Room (BIWAG)" || roomName === "Discussion Room (MALANA)"
+    ? DEFAULT_DISCUSSION_ROOM_TIME_SLOTS
+    : STANDARD_RESERVATION_TIME_SLOTS;
+
+// Every room has editable booking times. This also upgrades older saved rooms
+// that did not yet have a timeSlots field.
+const withRoomTimeSlots = (room) => ({
+  ...room,
+  timeSlots: room.timeSlots?.length ? room.timeSlots : getDefaultRoomTimeSlots(room.name),
+});
+
+const mergeRoomTimeSlots = (serverRooms, localRooms = []) =>
+  serverRooms.map((room) => {
+    const localRoom = localRooms.find((item) => item.name === room.name);
+    return withRoomTimeSlots({
+      ...room,
+      timeSlots: room.timeSlots?.length ? room.timeSlots : localRoom?.timeSlots,
+    });
+  });
+
 const downloadReservationAttachment = (attachment) => {
   if (!attachment?.dataUrl) return;
   const link = document.createElement("a");
@@ -47,14 +93,14 @@ const getAreaForService = (serviceName = "") => {
   if (service.includes("qr code entrance")) return "QR Code Entrance";
   if (service.includes("wifi") || service.includes("voucher")) return "Vouchers";
   if (service.includes("charging") || service.includes("slip")) return "Charging";
-  if (service.includes("printing") || service.includes("xerox")) return "Printing";
+  if (service.includes("printing") || service.includes("")) return "Printing";
   if (service.includes("cinema") || service.includes("ubag")) return "Ubag Cinema";
   if (service.includes("play")) return "Play Area";
   if (service.includes("pvao")) return "PVAO Area";
   if (service.includes("pwd")) return "PWD Area";
   if (service.includes("biwag") || service.includes("room 1")) return "Discussion Room 1";
   if (service.includes("malana") || service.includes("room 2")) return "Discussion Room 2";
-  if (service.includes("auto") || service.includes("intern")) return "Intern Auto-Deck";
+  if (service.includes("auto") || service.includes("intern")) return "DIGITAL TRANSPORTATION CENTER";
   return serviceName || "Internet Area";
 };
 
@@ -148,7 +194,7 @@ export const getLogDetails = (l, users) => {
   } else if (!l.terminalLocation && (area === "Discussion Room 1" || area === "Discussion Room 2")) {
     station = "2F STUDY & DISCUSSION";
   } else if (!l.terminalLocation && (checkSrv("auto") || checkSrv("intern"))) {
-    station = "INTERN AUTO-DECK";
+    station = "DIGITAL TRASPORTATION CENTER";
   } else if (!l.terminalLocation && area === "Printing") {
     station = "PRINTING SECTOR";
   }
@@ -194,60 +240,67 @@ export const AdminDashboard = ({
   const [activeTab, setActiveTab] = useState("users");
   const [showQrRegistrationModal, setShowQrRegistrationModal] = useState(false);
   const [qrQuery, setQrQuery] = useState("");
+  const [qrPage, setQrPage] = useState(1);
+  const qrRowsPerPage = 10;
   const [settingsTab, setSettingsTab] = useState("institutions");
   const [newInstInput, setNewInstInput] = useState("");
   const [newPatronInput, setNewPatronInput] = useState("");
-
-  // Dynamic Institutions List
-  const [institutions, setInstitutions] = useState(() => {
-    const saved = localStorage.getItem("plrc_institutions");
+  const [newRoomInput, setNewRoomInput] = useState("");
+  const [rooms, setRooms] = useState(() => {
+    const saved = localStorage.getItem("plrc_rooms");
     if (saved) {
       try {
         return JSON.parse(saved);
       } catch (_) {}
     }
     return [
-      "Cagayan State University",
-      "Saint Paul University Philippines",
-      "University of Saint Louis Tuguegarao",
-      "DepEd Cagayan Division",
-      "CSU Carig Campus",
-      "Local Government Unit",
-      "General Public",
-    ];
+      "Discussion Room (BIWAG)",
+      "Discussion Room (MALANA)",
+      "Conference Room",
+      "Ubag Cinema",
+      "Multimedia Room",
+    ].map((name) => ({ name, enabled: true, disabledReason: "" }));
+  });
+
+  // Dynamic Institutions List
+  const [institutions, setInstitutions] = useState(() => {
+    return [];
   });
 
   // Dynamic Patron Types List
   const [patronTypes, setPatronTypes] = useState(() => {
-    const saved = localStorage.getItem("plrc_patron_types");
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (_) {}
-    }
-    return [
-      "Student",
-      "Professional / Teacher",
-      "Researcher",
-      "LGU Official / employee",
-      "Senior Citizen / PWD",
-      "General Public",
-    ];
+    return [];
   });
 
   useEffect(() => {
-    localStorage.setItem("plrc_institutions", JSON.stringify(institutions));
-  }, [institutions]);
+    api.settings.get().then((settings) => {
+      setInstitutions(settings.institutions);
+      setPatronTypes(settings.patronTypes);
+      localStorage.setItem("plrc_patron_types", JSON.stringify(settings.patronTypes || []));
+      const savedRooms = JSON.parse(localStorage.getItem("plrc_rooms") || "[]");
+      const normalizedRooms = mergeRoomTimeSlots(settings.rooms, savedRooms);
+      setRooms(normalizedRooms);
+      localStorage.setItem("plrc_rooms", JSON.stringify(normalizedRooms));
+    }).catch((error) => console.warn("Unable to load library settings.", error));
+  }, []);
 
-  useEffect(() => {
-    localStorage.setItem("plrc_patron_types", JSON.stringify(patronTypes));
-  }, [patronTypes]);
+  const saveSettings = async (nextInstitutions = institutions, nextPatronTypes = patronTypes, nextRooms = rooms) => {
+    const normalizedRooms = nextRooms.map(withRoomTimeSlots);
+    const saved = await api.settings.update({ institutions: nextInstitutions, patronTypes: nextPatronTypes, rooms: normalizedRooms });
+    setInstitutions(saved.institutions);
+    setPatronTypes(saved.patronTypes);
+    localStorage.setItem("plrc_patron_types", JSON.stringify(saved.patronTypes || []));
+    const savedRooms = mergeRoomTimeSlots(saved.rooms, normalizedRooms);
+    setRooms(savedRooms);
+    localStorage.setItem("plrc_rooms", JSON.stringify(savedRooms));
+  };
 
-  const handleAddInstitution = () => {
+  const handleAddInstitution = async () => {
     const val = newInstInput.trim();
     if (val) {
       if (!institutions.includes(val)) {
-        setInstitutions([...institutions, val]);
+        const saved = await api.settings.addInstitution(val);
+        setInstitutions((current) => [...current, saved.name]);
         setNewInstInput("");
       } else {
         alert("This institution is already in your list.");
@@ -255,16 +308,84 @@ export const AdminDashboard = ({
     }
   };
 
-  const handleAddPatronType = () => {
+  const handleAddPatronType = async () => {
     const val = newPatronInput.trim();
     if (val) {
       if (!patronTypes.includes(val)) {
-        setPatronTypes([...patronTypes, val]);
+        const saved = await api.settings.addPatronType(val);
+        setPatronTypes((current) => [...current, saved.name]);
+        localStorage.setItem("plrc_patron_types", JSON.stringify([...patronTypes, saved.name]));
         setNewPatronInput("");
       } else {
         alert("This patron type is already in your list.");
       }
     }
+  };
+
+  const handleAddRoom = async () => {
+    const name = newRoomInput.trim();
+    if (!name) return;
+    if (rooms.some((room) => room.name.toLowerCase() === name.toLowerCase())) {
+      alert("This room is already in the settings list.");
+      return;
+    }
+    await saveSettings(institutions, patronTypes, [
+      ...rooms,
+      { name, enabled: true, disabledReason: "", timeSlots: getDefaultRoomTimeSlots(name) },
+    ]);
+    setNewRoomInput("");
+  };
+
+  const toggleRoomAvailability = async (roomName) => {
+    const selectedRoom = rooms.find((room) => room.name === roomName);
+    if (!selectedRoom) return;
+    if (selectedRoom.enabled) {
+      setRoomDisableModal({ roomName, reason: "" });
+      return;
+    }
+    const nextRooms = rooms.map((room) => {
+      if (room.name !== roomName) return room;
+      return { ...room, enabled: true, disabledReason: "" };
+    });
+    await saveSettings(institutions, patronTypes, nextRooms);
+  };
+
+  const confirmRoomDisable = async () => {
+    const reason = roomDisableModal?.reason.trim();
+    if (!reason) return;
+    const nextRooms = rooms.map((room) =>
+      room.name === roomDisableModal.roomName
+        ? { ...room, enabled: false, disabledReason: reason }
+        : room,
+    );
+    await saveSettings(institutions, patronTypes, nextRooms);
+    setRoomDisableModal(null);
+  };
+
+  const configureRoomTimeSlots = (roomConfig) => {
+    const currentSlots = roomConfig.timeSlots?.length
+      ? roomConfig.timeSlots
+      : DEFAULT_DISCUSSION_ROOM_TIME_SLOTS;
+    setRoomTimeSlotEditor({
+      roomName: roomConfig.name,
+      timeSlots: currentSlots.join(", "),
+    });
+  };
+
+  const handleSaveRoomTimeSlots = async () => {
+    const timeSlots = roomTimeSlotEditor.timeSlots
+      .split(",")
+      .map((slot) => slot.trim())
+      .filter(Boolean);
+    if (timeSlots.length === 0) {
+      alert("Please enter at least one time slot.");
+      return;
+    }
+    const nextRooms = rooms.map((item) =>
+      item.name === roomTimeSlotEditor.roomName ? { ...item, timeSlots } : item,
+    );
+    await saveSettings(institutions, patronTypes, nextRooms);
+    setRoomTimeSlotEditor(null);
   };
 
   const [userQuery, setUserQuery] = useState("");
@@ -275,6 +396,10 @@ export const AdminDashboard = ({
   useEffect(() => {
     setUserPage(1);
   }, [userQuery]);
+
+  useEffect(() => {
+    setQrPage(1);
+  }, [qrQuery]);
 
   // Auto-switch tab if role updates later (e.g. from null to admin)
   useEffect(() => {
@@ -318,6 +443,7 @@ export const AdminDashboard = ({
   // Date selection states (for blocking or reservation)
   const [targetBlockDate, setTargetBlockDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [targetBlockReason, setTargetBlockReason] = useState("");
+  const [targetBlockStatus, setTargetBlockStatus] = useState("closed");
 
   const calendarYear = calendarDate.getFullYear();
   const calendarMonth = calendarDate.getMonth();
@@ -406,21 +532,49 @@ export const AdminDashboard = ({
   const [newResName, setNewResName] = useState("");
   const [newResPatronType, setNewResPatronType] = useState("Student");
   const [newResDate, setNewResDate] = useState(() => new Date().toISOString().split("T")[0]);
-  const [newResTimeSlot, setNewResTimeSlot] = useState(
-    "Full Day (8:00 AM - 5:00 PM)",
-  );
+  const [newResRoom, setNewResRoom] = useState("Discussion Room (BIWAG)");
+  const [newResTimeSlot, setNewResTimeSlot] = useState("");
   const [newResPurpose, setNewResPurpose] = useState("");
+  const [selectedCalendarReservationDate, setSelectedCalendarReservationDate] = useState(null);
   const [rejectingReservation, setRejectingReservation] = useState(null);
   const [reservationRejectReason, setReservationRejectReason] = useState("");
+  const [roomTimeSlotEditor, setRoomTimeSlotEditor] = useState(null);
+  const [roomDisableModal, setRoomDisableModal] = useState(null);
+  const [reservationPage, setReservationPage] = useState(1);
+  const reservationsRowsPerPage = 10;
+  const adminSelectedRoom = rooms.find((room) => room.name === newResRoom);
+  const adminReservationTimeSlots = adminSelectedRoom?.timeSlots?.length
+    ? adminSelectedRoom.timeSlots
+    : getDefaultRoomTimeSlots(newResRoom);
 
-  // Persists blocked days and reservations
-  React.useEffect(() => {
-    localStorage.setItem("plrc_reservations", JSON.stringify(reservations));
-  }, [reservations]);
+  useEffect(() => {
+    Promise.all([api.reservations.list(), api.blockedDays.list()]).then(([serverReservations, serverBlockedDays]) => {
+      setReservations(serverReservations);
+      setBlockedDays(Object.fromEntries(serverBlockedDays.map((day) => [day.date, { status: day.status, reason: day.reason }])));
+    }).catch((error) => console.warn("Unable to load reservation data.", error));
+  }, []);
 
-  React.useEffect(() => {
-    localStorage.setItem("plrc_blocked_days", JSON.stringify(blockedDays));
-  }, [blockedDays]);
+  const reservationTotalPages = Math.max(
+    1,
+    Math.ceil(reservations.length / reservationsRowsPerPage),
+  );
+  const orderedReservations = reservations
+    .map((reservation, index) => ({ reservation, index }))
+    .sort((a, b) => {
+      if (!a.reservation.createdAt || !b.reservation.createdAt) {
+        return a.reservation.createdAt ? -1 : b.reservation.createdAt ? 1 : a.index - b.index;
+      }
+      return new Date(b.reservation.createdAt).getTime() - new Date(a.reservation.createdAt).getTime();
+    })
+    .map(({ reservation }) => reservation);
+  const paginatedReservations = orderedReservations.slice(
+    (reservationPage - 1) * reservationsRowsPerPage,
+    reservationPage * reservationsRowsPerPage,
+  );
+
+  useEffect(() => {
+    setReservationPage((page) => Math.min(page, reservationTotalPages));
+  }, [reservationTotalPages]);
 
   // Calendar Day Click Handler: prefill forms
   const handleCalendarDayClick = (dayNum) => {
@@ -429,30 +583,31 @@ export const AdminDashboard = ({
     const formattedDate = `${calendarYear}-${monthStr}-${dayStr}`;
     setTargetBlockDate(formattedDate);
     setNewResDate(formattedDate);
+    setSelectedCalendarReservationDate(formattedDate);
     // Set placeholder reason to edit easily
     const current = blockedDays[formattedDate];
     if (current) {
       setTargetBlockReason(current.reason);
+      setTargetBlockStatus(current.status || "closed");
     } else {
       setTargetBlockReason("");
+      setTargetBlockStatus("closed");
     }
   };
 
   // Close Day operation
-  const handleCloseDay = () => {
+  const handleCloseDay = async () => {
     if (!targetBlockDate) return;
-    setBlockedDays((prev) => ({
-      ...prev,
-      [targetBlockDate]: {
-        status: "closed",
-        reason: targetBlockReason.trim() || "Facility Closed",
-      },
-    }));
+    const day = { id: targetBlockDate, date: targetBlockDate, status: targetBlockStatus, reason: targetBlockReason.trim() || "Facility Closed" };
+    try { await api.blockedDays.update(day); } catch { await api.blockedDays.create(day); }
+    setBlockedDays((prev) => ({ ...prev, [targetBlockDate]: { status: day.status, reason: day.reason } }));
+    window.location.reload();
   };
 
   // Open Day operation
-  const handleOpenDay = () => {
+  const handleOpenDay = async () => {
     if (!targetBlockDate) return;
+    await api.blockedDays.remove(targetBlockDate);
     setBlockedDays((prev) => {
       const copy = { ...prev };
       delete copy[targetBlockDate];
@@ -461,47 +616,40 @@ export const AdminDashboard = ({
   };
 
   // Create input reservation
-  const handleCreateReservation = (e) => {
+  const handleCreateReservation = async (e) => {
     e.preventDefault();
-    if (!newResName.trim() || !newResPurpose.trim()) {
+    if (!newResName.trim() || !newResPurpose.trim() || !newResRoom || !newResTimeSlot) {
       alert(
         "Please fill out Patron Name and Purpose to schedule a room/seat request.",
       );
       return;
     }
     const rawRes = {
-      id: `res-${Date.now()}`,
+      createdAt: new Date().toISOString(),
       name: newResName,
       patronType: newResPatronType,
       date: newResDate,
+      room: newResRoom,
       timeSlot: newResTimeSlot,
       purpose: newResPurpose,
       status: "PENDING",
     };
-    setReservations((prev) => [rawRes, ...prev]);
+    const saved = await api.reservations.create(rawRes);
+    setReservations((prev) => [saved, ...prev]);
     setNewResName("");
     setNewResPurpose("");
+    setNewResTimeSlot("");
     alert(
       "Reservation Request catalogued successfully! Active badge incremented.",
     );
   };
 
   // Edit reservation status
-  const handleUpdateReservationStatus = (id, state, rejectionReason = "") => {
-    setReservations((prev) =>
-      prev.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              status: state,
-              rejectionReason:
-                state === "REJECTED" ? rejectionReason.trim() : "",
-              rejectedAt:
-                state === "REJECTED" ? new Date().toISOString() : "",
-            }
-          : item,
-      ),
-    );
+  const handleUpdateReservationStatus = async (id, state, rejectionReason = "") => {
+    const current = reservations.find((item) => item.id === id);
+    if (!current) return;
+    const saved = await api.reservations.update({ ...current, status: state, rejectionReason: state === "REJECTED" ? rejectionReason.trim() : "", rejectedAt: state === "REJECTED" ? new Date().toISOString() : null, approvedAt: state === "APPROVED" ? new Date().toISOString() : null });
+    setReservations((prev) => prev.map((item) => item.id === id ? saved : item));
   };
 
   const openRejectReservationModal = (reservation) => {
@@ -785,7 +933,12 @@ export const AdminDashboard = ({
       (u.email && u.email.toLowerCase().includes(q)) ||
       (u.patronType && u.patronType.toLowerCase().includes(q))
     );
-  });
+  }).map((user, index) => ({ user, index })).sort((first, second) => {
+    const firstDate = new Date(first.user.createdAt || 0).getTime();
+    const secondDate = new Date(second.user.createdAt || 0).getTime();
+    if (firstDate !== secondDate) return secondDate - firstDate;
+    return first.index - second.index;
+  }).map(({ user }) => user);
 
   // Pagination logic for Members
   const paginatedUsers = filteredUsers.slice(
@@ -800,10 +953,22 @@ export const AdminDashboard = ({
     return (
       fullName.includes(q) ||
       c.rfid.includes(q) ||
+      (c.patronIdentification && c.patronIdentification.toLowerCase().includes(q)) ||
+      (c.patronType && c.patronType.toLowerCase().includes(q)) ||
       (c.address && c.address.toLowerCase().includes(q)) ||
       (c.institution && c.institution.toLowerCase().includes(q))
     );
+  }).sort((firstClient, secondClient) => {
+    const firstDate = new Date(firstClient.createdAt || 0).getTime();
+    const secondDate = new Date(secondClient.createdAt || 0).getTime();
+    return secondDate - firstDate;
   });
+
+  const qrTotalPages = Math.max(1, Math.ceil(filteredQrClients.length / qrRowsPerPage));
+  const paginatedQrClients = filteredQrClients.slice(
+    (qrPage - 1) * qrRowsPerPage,
+    qrPage * qrRowsPerPage,
+  );
 
   // Convert logs to full featured details
   const mappedLogs = logs.map((l) => {
@@ -822,7 +987,12 @@ export const AdminDashboard = ({
         new Date(b.checkInTime).getTime() - new Date(a.checkInTime).getTime(),
     );
   const cplrcSubServices = Array.from(
-    new Set(cplrcSubLogs.flatMap((log) => log.services || []).filter(Boolean)),
+    new Set([
+      "Entrance",
+      "WiFi Voucher",
+      "Charging Slip",
+      ...cplrcSubLogs.flatMap((log) => log.services || []).filter(Boolean),
+    ]),
   );
   const filteredCplrcSubLogs = cplrcSubLogs.filter((log) => {
     const query = cplrcSubQuery.toLowerCase();
@@ -960,7 +1130,9 @@ export const AdminDashboard = ({
       (l.visitorsName || "").toLowerCase().includes(q) ||
       (l.rfid || "").toLowerCase().includes(q) ||
       area.toLowerCase().includes(q) ||
-      (l.patronType || "").toLowerCase().includes(q);
+      (l.patronType || "").toLowerCase().includes(q) ||
+      (l.services || []).some((service) => String(service).toLowerCase().includes(q)) ||
+      (l.voucherCode || "").toLowerCase().includes(q);
 
     const checkInDate = new Date(l.checkInTime);
     const fromMatch = !qrEntranceFromDate || checkInDate >= new Date(`${qrEntranceFromDate}T00:00:00`);
@@ -993,50 +1165,51 @@ export const AdminDashboard = ({
     qrEntrancePatronFilter,
   ]);
 
-  const handleDownloadExcel = () => {
-    // Generate simple CSV download conforming to requirements
-    const headers = [
-      "Date & Time",
-      "RFID Card No",
-      "Visitor Name",
-      "Gender",
-      "Age Bracket",
-      "Institution",
-      "Patron Type",
-      "Station",
-      "Area",
-      "Status",
-    ];
-    const csvRows = [headers.join(",")];
-    sortedLogs.forEach((l) => {
-      const sanitize = (val) => `"${(val || "").replace(/"/g, '""')}"`;
-      const row = [
-        sanitize(l.formattedDate),
-        sanitize(l.rfid),
-        sanitize(l.visitorsName),
-        sanitize(l.gender),
-        sanitize(l.ageBracket),
-        sanitize(l.institution),
-        sanitize(l.patronType),
-        sanitize(l.station),
-        sanitize(l.area),
-        sanitize(l.status),
-      ];
-      csvRows.push(row.join(","));
-    });
-
+  const downloadCsv = (filename, headers, rows) => {
+    const sanitize = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const csvRows = [headers, ...rows].map((row) => row.map(sanitize).join(","));
     const csvContent = "\uFEFF" + csvRows.join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute(
-      "download",
-      `CPLRC_RFID_Visitors_Report_${new Date().toISOString().slice(0, 10)}.csv`,
-    );
+    link.setAttribute("download", filename);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadExcel = () => {
+    downloadCsv(
+      `CPLRC_RFID_Visitors_Report_${new Date().toISOString().slice(0, 10)}.csv`,
+      ["Date & Time", "RFID Card No", "Visitor Name", "Gender", "Age Bracket", "Institution", "Patron Type", "Station", "Area", "Status"],
+      sortedLogs.map((l) => [l.formattedDate, l.rfid, l.visitorsName, l.gender, l.ageBracket, l.institution, l.patronType, l.station, l.area, l.status]),
+    );
+  };
+
+  const handleDownloadCplrcSub = () => {
+    downloadCsv(
+      `CPLRC_SUB_RFID_Visitors_${new Date().toISOString().slice(0, 10)}.csv`,
+      ["Date & Time", "Visitor", "RFID Code", "Institution", "Age Bracket", "Gender", "Patron Type", "Services Required"],
+      filteredCplrcSubLogs.map((log) => [log.formattedDate, log.visitorsName, log.rfid, log.institution, log.ageBracket, log.gender, log.patronType, (log.services || []).join(" | ")]),
+    );
+  };
+
+  const handleDownloadQrEntrance = () => {
+    downloadCsv(
+      `CPLRC_QR_Entrance_${new Date().toISOString().slice(0, 10)}.csv`,
+      ["Date & Time", "Visitor", "QR Pass Code", "Target Floor / Area", "Wi-Fi Voucher", "Patron Type"],
+      filteredQrEntranceLogs.map((l) => [l.formattedDate, l.visitorsName, l.rfid, l.qrEntranceArea || l.terminalLocation || l.area, (l.services || []).some((service) => String(service).toLowerCase().includes("wifi") || String(service).toLowerCase().includes("voucher")) ? (l.voucherCode || "1 Hour Voucher") : "", l.patronType]),
+    );
+  };
+
+  const handleDownloadQrClients = () => {
+    downloadCsv(
+      `CPLRC_Walk_In_QR_Registrants_${new Date().toISOString().slice(0, 10)}.csv`,
+      ["Guest Registrant Name", "Patron Identification", "QR Pass Code", "Provincial Address", "Affiliated School or Office", "Registered At"],
+      filteredQrClients.map((client) => [`${client.lastName}, ${client.givenName} ${client.middleName || ""}`.trim(), client.patronIdentification || client.patronType || "", client.rfid, client.address, client.institution, client.createdAt]),
+    );
   };
 
   const renderSortHeader = (label, field) => {
@@ -1145,15 +1318,24 @@ export const AdminDashboard = ({
     }
   }
 
+  // Reservations shown on the dashboard calendar. Rejected requests are not
+  // active bookings, so they are kept in the ledger but excluded here.
+  const reservationsByDate = reservations.reduce((byDate, reservation) => {
+    if (!reservation.date || reservation.status === "REJECTED") return byDate;
+    if (!byDate[reservation.date]) byDate[reservation.date] = [];
+    byDate[reservation.date].push(reservation);
+    return byDate;
+  }, {});
+
   // ====================================================
   // 2. MAIN LOGGED-IN ADMIN CONSOLE LAYOUT WITH SIDEBAR
   // ====================================================
   return (
     <div className="flex flex-col lg:flex-row min-h-screen bg-[#F3F4F6] font-sans antialiased text-slate-900">
       {/* LEFT SIDEBAR NAVIGATION PANEL (PIC PERFECT) */}
-      <div className="w-full lg:w-64 bg-white border-b lg:border-b-0 lg:border-r border-gray-205 border-gray-200 flex flex-col pt-6 pb-4 shrink-0 select-none">
+      <div className="w-full lg:w-64 bg-white border-b lg:border-b-0 lg:border-r border-gray-205 border-gray-200 flex flex-col pt-4 lg:pt-6 pb-3 lg:pb-4 shrink-0 select-none">
         {/* Core title branding with official logo */}
-        <div className="flex items-center gap-3 px-6 mb-8">
+        <div className="flex items-center gap-3 px-4 sm:px-6 mb-4 lg:mb-8">
           <PLRCLogo size={48} />
           <div>
             <span className="font-sans font-black text-[#1E3A8A] text-lg block tracking-tight leading-none">
@@ -1166,11 +1348,11 @@ export const AdminDashboard = ({
         </div>
 
         {/* Dynamic Sidebar Links with state triggers */}
-        <nav className="flex-1 px-4 space-y-1.5">
+        <nav className="flex-1 flex lg:block gap-1.5 overflow-x-auto px-3 sm:px-4 pb-1 lg:pb-0 lg:space-y-1.5 [scrollbar-width:thin]">
           {(effectiveRole === "superadmin" || !effectiveRole) && (
             <button
               onClick={() => setSidebarTab("dashboard")}
-              className={`w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+              className={`min-w-max lg:w-full flex items-center justify-between px-3 sm:px-4 py-2.5 lg:py-3.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
                 sidebarTab === "dashboard" 
                   ? "bg-blue-50 text-[#1E3A8A] border-l-4 border-[#1E3A8A]"
                   : "text-gray-500 hover:text-gray-800 hover:bg-slate-50"
@@ -1183,10 +1365,10 @@ export const AdminDashboard = ({
             </button>
           )}
 
-          {effectiveRole === "superadmin" && (
+          {effectiveRole && (
             <button
               onClick={() => setSidebarTab("visitors")}
-              className={`w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+              className={`min-w-max lg:w-full flex items-center justify-between px-3 sm:px-4 py-2.5 lg:py-3.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
                 sidebarTab === "visitors"
                   ? "bg-blue-50 text-[#1E3A8A] border-l-4 border-[#1E3A8A]"
                   : "text-gray-500 hover:text-gray-800 hover:bg-slate-50"
@@ -1201,7 +1383,7 @@ export const AdminDashboard = ({
 
           <button
             onClick={() => setSidebarTab("reservations")}
-            className={`w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+            className={`min-w-max lg:w-full flex items-center justify-between px-3 sm:px-4 py-2.5 lg:py-3.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
               sidebarTab === "reservations"
                 ? "bg-blue-50 text-[#1E3A8A] border-l-4 border-[#1E3A8A]"
                 : "text-gray-500 hover:text-gray-800 hover:bg-slate-50"
@@ -1221,7 +1403,7 @@ export const AdminDashboard = ({
           {effectiveRole === "superadmin" && (
             <button
               onClick={() => setSidebarTab("settings")}
-              className={`w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+              className={`min-w-max lg:w-full flex items-center justify-between px-3 sm:px-4 py-2.5 lg:py-3.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
                 sidebarTab === "settings"
                   ? "bg-blue-50 text-[#1E3A8A] border-l-4 border-[#1E3A8A]"
                   : "text-gray-500 hover:text-gray-800 hover:bg-slate-50"
@@ -1233,10 +1415,23 @@ export const AdminDashboard = ({
               </span>
             </button>
           )}
+
+          {effectiveRole === "superadmin" && (
+            <button
+              onClick={() => setSidebarTab("e-resources")}
+              className={`min-w-max lg:w-full flex items-center justify-between px-3 sm:px-4 py-2.5 lg:py-3.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                sidebarTab === "e-resources"
+                  ? "bg-blue-50 text-[#1E3A8A] border-l-4 border-[#1E3A8A]"
+                  : "text-gray-500 hover:text-gray-800 hover:bg-slate-50"
+              }`}
+            >
+              <span className="flex items-center gap-3"><BookOpen size={16} /> E-Resources</span>
+            </button>
+          )}
         </nav>
 
         {/* Staff Desk User profile box at bottom sidebar */}
-        <div className="mt-auto px-4 pt-4 border-t border-slate-100 flex items-center justify-between">
+        <div className="hidden lg:flex mt-auto px-4 pt-4 border-t border-slate-100 items-center justify-between">
           <div className="flex items-center gap-2 overflow-hidden">
             <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold shrink-0">
               J
@@ -1263,21 +1458,22 @@ export const AdminDashboard = ({
       {/* RIGHT SIDEBAR MAIN VIEWPORT CONTENT PANEL */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* TOP STATUS LINE - Jerome header profile exactly matching layout top banner */}
-        <div className="bg-white border-b border-gray-200 py-3.5 px-6 flex justify-between items-center select-none shrink-0">
+        <div className="bg-white border-b border-gray-200 py-3.5 px-4 sm:px-6 flex justify-between items-center gap-3 select-none shrink-0">
           <div>
-            <h1 className="text-base font-black text-slate-850 tracking-tight uppercase flex items-center gap-2">
+            <h1 className="text-sm sm:text-base font-black text-slate-850 tracking-tight uppercase flex items-center gap-2">
               {sidebarTab === "dashboard" && "CPLRC Dashboard"}
               {sidebarTab === "visitors" && "Patrons & Logs Administration"}
               {sidebarTab === "reservations" && "Room & Computer Bookings"}
               {sidebarTab === "settings" && "System Configuration"}
+              {sidebarTab === "e-resources" && "E-Resources Management"}
             </h1>
           </div>
 
-          <div className="flex items-center gap-4 text-xs font-mono text-slate-500">
+          <div className="flex items-center gap-2 sm:gap-4 text-xs font-mono text-slate-500 shrink-0">
           <span className="bg-blue-100 text-blue-800 font-black px-2 py-0.5 rounded-full text-[10px]">
             {adminRole === "superadmin" ? "SUPERADMIN" : "STAFF ADMIN"} ACCESS
             </span>
-            <div className="flex items-center gap-1">
+            <div className="hidden sm:flex items-center gap-1">
               <Users size={14} className="text-blue-600" />
               <span>
                 User:{" "}
@@ -1288,18 +1484,23 @@ export const AdminDashboard = ({
         </div>
 
         {/* DYNAMIC TAB COMPILING PANEL */}
-        <div className="flex-1 p-4 md:p-6 overflow-y-auto">
+        <div className="flex-1 p-3 sm:p-4 md:p-6 overflow-y-auto">
+          {/* ========================================================= */}
+          {/* VIEW: E-RESOURCES MANAGEMENT */}
+          {/* ========================================================= */}
+          {sidebarTab === "e-resources" && effectiveRole && <EResourceManager />}
+
           {/* ========================================================= */}
           {/* VIEW: SIDEBAR TAB - RESERVATIONS CALENDAR HOME (DASHBOARD) */}
           {/* ========================================================= */}
           {sidebarTab === "dashboard" && (effectiveRole === "superadmin" || !effectiveRole) && (
             <div className="space-y-6">
               {/* Dynamic visitors and reservations analytics cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 select-none">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-6 select-none">
                 {/* Total Visitors logbook analytics card */}
                 <div
                   id="stat-total-visitors"
-                  className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col items-center justify-center text-center"
+                  className="bg-white p-4 sm:p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col items-center justify-center text-center"
                 >
                   <h3 className="text-lg font-extrabold text-[#1E3A8A] tracking-tight text-center uppercase">
                     Total Visitors
@@ -1312,7 +1513,7 @@ export const AdminDashboard = ({
                 {/* Pending active reservations counter card */}
                 <div
                   id="stat-pending-res"
-                  className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col items-center justify-center text-center"
+                  className="bg-white p-4 sm:p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col items-center justify-center text-center"
                 >
                   <h3 className="text-lg font-extrabold text-[#1E3A8A] tracking-tight text-center uppercase">
                     Pending Reservations
@@ -1329,8 +1530,8 @@ export const AdminDashboard = ({
                   STAFF SCHEDULER CONTROLLER
                 </span>
 
-                <div className="flex flex-col sm:flex-row items-end gap-2 mt-2">
-                  <div className="flex-auto w-full max-w-[160px]">
+                <div className="flex flex-col md:flex-row md:items-end gap-2 mt-2">
+                  <div className="flex-auto w-full md:max-w-[160px]">
                     <label className="text-[9px] font-mono font-bold text-slate-400 uppercase block mb-1">
                       Target calendar date picker
                     </label>
@@ -1342,7 +1543,7 @@ export const AdminDashboard = ({
                     />
                   </div>
 
-                  <div className="flex-auto w-full max-w-[420px]">
+                  <div className="flex-auto w-full md:max-w-[420px]">
                     <label className="text-[9px] font-mono font-bold text-slate-400 uppercase block mb-1 font-sans">
                       Reason / scheduled calendar notation description
                     </label>
@@ -1355,7 +1556,21 @@ export const AdminDashboard = ({
                     />
                   </div>
 
-                  <div className="flex gap-2 w-full sm:w-auto mt-2 sm:mt-0 shrink-0">
+                  <div className="flex-auto w-full md:max-w-[180px]">
+                    <label className="text-[9px] font-mono font-bold text-slate-400 uppercase block mb-1 font-sans">
+                      Calendar status
+                    </label>
+                    <select
+                      value={targetBlockStatus}
+                      onChange={(e) => setTargetBlockStatus(e.target.value)}
+                      className="border border-gray-350 rounded-lg px-2 py-1 text-[11px] w-full focus:ring-1 focus:ring-blue-500 focus:outline-none text-slate-800 bg-slate-50"
+                    >
+                      <option value="closed">Maintenance Blocked (Orange)</option>
+                      <option value="holiday">Holiday Closed (Red)</option>
+                    </select>
+                  </div>
+
+                  <div className="flex gap-2 w-full md:w-auto mt-2 md:mt-0 shrink-0">
                     <button
                       onClick={handleCloseDay}
                       className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold text-[11px] rounded-md uppercase tracking-wide transition-all cursor-pointer shadow-sm"
@@ -1424,8 +1639,11 @@ export const AdminDashboard = ({
                     const dayDate = new Date(calendarYear, calendarMonth, dayNum);
                     const isToday = dayDate.getTime() === today.getTime();
                     const blockObj = blockedDays[itemDateKey];
+                    const dayReservations = reservationsByDate[itemDateKey] || [];
                     let bgClass = "bg-slate-50 hover:bg-slate-100 text-slate-800 border border-slate-200/50";
-                    let tooltip = "";
+                    let tooltip = dayReservations.length
+                      ? `${dayReservations.length} room reservation${dayReservations.length > 1 ? "s" : ""}`
+                      : "";
 
                     if (isToday) {
                       bgClass = "bg-[#10B981] text-white border-2 border-emerald-500 font-extrabold shadow-sm shadow-emerald-200";
@@ -1445,11 +1663,26 @@ export const AdminDashboard = ({
                         key={`day-${dayNum}`}
                         onClick={() => handleCalendarDayClick(dayNum)}
                         title={tooltip || `Day ${dayNum} - Available for Booking`}
-                        className={`h-12 rounded-sm flex items-center justify-center p-0 text-center cursor-pointer transition-all hover:scale-[1.03] active:scale-[0.98] relative group ${bgClass}`}
+                        className={`min-h-16 sm:min-h-20 md:min-h-28 rounded-sm flex flex-col items-stretch p-1 sm:p-1.5 text-left cursor-pointer transition-all hover:scale-[1.01] active:scale-[0.98] relative group ${bgClass}`}
                       >
-                        <span className="text-[13px] font-bold block">
+                        <span className="text-[11px] sm:text-[13px] font-bold block leading-none">
                           {dayNum}
                         </span>
+
+                        {dayReservations.length > 0 && (
+                          <div className="hidden sm:block mt-1 space-y-1 overflow-y-auto max-h-20 pr-0.5">
+                            {dayReservations.map((reservation) => (
+                              <div
+                                key={reservation.id}
+                                className={`rounded px-1.5 py-1 text-left shadow-sm ${reservation.status === "APPROVED" ? "bg-blue-100 text-blue-950 border border-blue-200" : "bg-amber-100 text-amber-950 border border-amber-200"}`}
+                              >
+                                <div className="text-[8px] font-black uppercase truncate">{reservation.name || "Guest"}</div>
+                                <div className="text-[7px] font-semibold truncate">{reservation.timeSlot || "Time to be confirmed"}</div>
+                                <div className="text-[7px] font-bold truncate">{reservation.room || "General Space"}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
 
                         {/* Hover badge details tooltips for closed indices */}
                         {tooltip && (
@@ -1477,6 +1710,14 @@ export const AdminDashboard = ({
                     <span>Active selected stay (Green)</span>
                   </div>
                   <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-sm bg-amber-200 inline-block border border-amber-400" />
+                    <span>Pending Reservation</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-sm bg-blue-200 inline-block border border-blue-400" />
+                    <span>Approved Reservation</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-sm bg-[#F8FAFC] inline-block border border-slate-200" />
                     <span>Full Available standard zone (Gray)</span>
                   </div>
@@ -1491,10 +1732,10 @@ export const AdminDashboard = ({
           {sidebarTab === "visitors" && effectiveRole === "superadmin" && (
             <div className="bg-white rounded-3xl shadow-sm border border-gray-200/80 overflow-hidden">
               {/* Tabs strip matching original AdminDashboard precisely */}
-              <div className="flex flex-wrap border-b border-gray-200 bg-slate-50/50 p-2 gap-1">
+              <div className="flex flex-nowrap overflow-x-auto border-b border-gray-200 bg-slate-50/50 p-2 gap-1 [scrollbar-width:thin]">
                 <button
                   onClick={() => setActiveTab("users")}
-                  className={`px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wide transition-all flex items-center gap-2 ${
+                  className={`shrink-0 px-4 sm:px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wide transition-all flex items-center gap-2 ${
                     activeTab === "users"
                       ? "bg-white text-blue-700 shadow-sm border border-gray-200/40"
                       : "text-gray-500 hover:text-gray-800 hover:bg-slate-100/50"
@@ -1504,7 +1745,7 @@ export const AdminDashboard = ({
                 </button>
                 <button
                   onClick={() => setActiveTab("qr-clients")}
-                  className={`px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wide transition-all flex items-center gap-2 ${
+                  className={`shrink-0 px-4 sm:px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wide transition-all flex items-center gap-2 ${
                     activeTab === "qr-clients"
                       ? "bg-white text-emerald-700 shadow-sm border border-gray-200/40"
                       : "text-gray-500 hover:text-gray-800 hover:bg-slate-100/50"
@@ -1514,7 +1755,7 @@ export const AdminDashboard = ({
                 </button>
                 <button
                   onClick={() => setActiveTab("logs")}
-                  className={`px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wide transition-all flex items-center gap-2 ${
+                  className={`shrink-0 px-4 sm:px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wide transition-all flex items-center gap-2 ${
                     activeTab === "logs"
                       ? "bg-white text-blue-700 shadow-sm border border-gray-200/40"
                       : "text-gray-500 hover:text-gray-800 hover:bg-slate-100/50"
@@ -1525,7 +1766,7 @@ export const AdminDashboard = ({
                 </button>
                 <button
                   onClick={() => setActiveTab("cplrc-sub")}
-                  className={`px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wide transition-all flex items-center gap-2 ${
+                  className={`shrink-0 px-4 sm:px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wide transition-all flex items-center gap-2 ${
                     activeTab === "cplrc-sub"
                       ? "bg-white text-violet-700 shadow-sm border border-gray-200/40"
                       : "text-gray-500 hover:text-gray-800 hover:bg-slate-100/50"
@@ -1535,7 +1776,7 @@ export const AdminDashboard = ({
                 </button>
                 <button
                   onClick={() => setActiveTab("qr-entrance")}
-                  className={`px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wide transition-all flex items-center gap-2 ${
+                  className={`shrink-0 px-4 sm:px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wide transition-all flex items-center gap-2 ${
                     activeTab === "qr-entrance"
                       ? "bg-white text-cyan-700 shadow-sm border border-gray-200/40"
                       : "text-gray-500 hover:text-gray-800 hover:bg-slate-100/50"
@@ -1545,7 +1786,7 @@ export const AdminDashboard = ({
                 </button>
                 <button
                   onClick={() => setActiveTab("statistics")}
-                  className={`px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wide transition-all flex items-center gap-2 ${
+                  className={`shrink-0 px-4 sm:px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wide transition-all flex items-center gap-2 ${
                     activeTab === "statistics"
                       ? "bg-white text-blue-700 shadow-sm border border-gray-200/40"
                       : "text-gray-500 hover:text-gray-800 hover:bg-slate-100/50"
@@ -1574,16 +1815,24 @@ export const AdminDashboard = ({
                         />
                       </div>
 
-                      <button
-                        onClick={() => {
-                          setEditingUser(null);
-                          setFormData((prev) => ({ ...prev, rfid: "" }));
-                          setShowNewUserModal(true);
-                        }}
-                        className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm hover:shadow transition-all flex items-center justify-center gap-1.5 uppercase tracking-wider cursor-pointer"
-                      >
-                        <Plus size={16} /> Add Member
-                      </button>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <button
+                          onClick={handleDownloadExcel}
+                          className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 uppercase tracking-wider cursor-pointer"
+                        >
+                          <FileSpreadsheet size={16} /> Download Excel
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditingUser(null);
+                            setFormData((prev) => ({ ...prev, rfid: "" }));
+                            setShowNewUserModal(true);
+                          }}
+                          className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm hover:shadow transition-all flex items-center justify-center gap-1.5 uppercase tracking-wider cursor-pointer"
+                        >
+                          <Plus size={16} /> Add Member
+                        </button>
+                      </div>
                     </div>
 
                     <div className="overflow-x-auto border border-gray-205 rounded-2xl shadow-xs">
@@ -1639,7 +1888,7 @@ export const AdminDashboard = ({
                                         {u.lastName}
                                       </div>
                                       <div className="text-[10px] text-gray-400 font-mono">
-                                        Index Born: {u.birthday}
+                                        Birtday {u.birthday}
                                       </div>
                                     </div>
                                   </div>
@@ -1694,14 +1943,19 @@ export const AdminDashboard = ({
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => {
-                                      if (
-                                        confirm(
-                                          `Permanent deletion command requested: \nAre you absolutely sure you wish to delete member ${u.givenName} ${u.lastName}?\nCard Token: ${u.rfid}`,
-                                        )
-                                      ) {
-                                        onDeleteUser(u.id);
-                                      }
+                                    onClick={async () => {
+                                      const result = await Swal.fire({
+                                        title: "Delete member record?",
+                                        text: `Are you sure you wish to delete ${u.givenName} ${u.lastName}? Card Token: ${u.rfid}`,
+                                        icon: "warning",
+                                        showCancelButton: true,
+                                        confirmButtonText: "Delete",
+                                        cancelButtonText: "Cancel",
+                                        confirmButtonColor: "#e11d48",
+                                        cancelButtonColor: "#64748b",
+                                        reverseButtons: true,
+                                      });
+                                      if (result.isConfirmed) onDeleteUser(u.id);
                                     }}
                                     className="p-2 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition-all cursor-pointer"
                                     title="Deregister member record"
@@ -1764,14 +2018,22 @@ export const AdminDashboard = ({
                           onChange={(e) => setQrQuery(e.target.value)}
                         />
                       </div>
-                      {adminRole === "superadmin" && (
+                      <div className="flex flex-col sm:flex-row gap-2">
                         <button
-                          onClick={() => setShowQrRegistrationModal(true)}
-                          className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 uppercase tracking-wider cursor-pointer"
+                          onClick={handleDownloadQrClients}
+                          className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 uppercase tracking-wider cursor-pointer"
                         >
-                          <Plus size={16} /> Add QR Registrant
+                          <FileSpreadsheet size={16} /> Download Excel
                         </button>
-                      )}
+                        {adminRole === "superadmin" && (
+                          <button
+                            onClick={() => setShowQrRegistrationModal(true)}
+                            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 uppercase tracking-wider cursor-pointer"
+                          >
+                            <Plus size={16} /> Add QR Registrant
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     <div className="overflow-x-auto border border-gray-205 rounded-2xl shadow-xs">
@@ -1779,6 +2041,7 @@ export const AdminDashboard = ({
                         <thead className="bg-[#ECFDF5] text-[10px] sm:text-xs font-bold text-emerald-800 uppercase tracking-wider font-mono">
                           <tr>
                             <th className="px-5 py-3.5">Guest Registrant Name</th>
+                            <th className="px-5 py-3.5">Patron Identification</th>
                             <th className="px-5 py-3.5">QR Pass Code</th>
                             <th className="px-5 py-3.5">Provincial Address</th>
                             <th className="px-5 py-3.5">Affiliated School or Office</th>
@@ -1787,9 +2050,9 @@ export const AdminDashboard = ({
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200 text-xs sm:text-sm">
                           {filteredQrClients.length === 0 ? (
-                            <tr><td colSpan={5} className="px-5 py-12 text-center text-gray-400 italic font-mono uppercase">No QR entries found.</td></tr>
+                            <tr><td colSpan={6} className="px-5 py-12 text-center text-gray-400 italic font-mono uppercase">No QR entries found.</td></tr>
                           ) : (
-                            filteredQrClients.map((c) => (
+                            paginatedQrClients.map((c) => (
                               <tr key={c.id} className="hover:bg-emerald-50/20 transition-colors">
                                 <td className="px-5 py-4 whitespace-nowrap">
                                   <div className="flex items-center gap-3">
@@ -1797,13 +2060,27 @@ export const AdminDashboard = ({
                                     <div><div className="font-extrabold text-slate-900 uppercase">{c.lastName}, {c.givenName}</div><div className="text-[10px] text-slate-400 font-mono">Registered: {new Date(c.createdAt).toLocaleDateString()}</div></div>
                                   </div>
                                 </td>
+                                <td className="px-5 py-4 whitespace-nowrap"><span className="font-bold text-slate-700 bg-slate-50 px-2 py-1 rounded border border-slate-200">{c.patronIdentification || c.patronType || "N/A"}</span></td>
                                 <td className="px-5 py-4 whitespace-nowrap"><span className="font-mono text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded border border-emerald-100">{c.rfid}</span></td>
                                 <td className="px-5 py-4 text-gray-700 max-w-xs truncate font-medium">{c.address}</td>
                                 <td className="px-5 py-4 text-slate-800 font-bold max-w-xs truncate">{c.institution}</td>
                                 <td className="px-5 py-4 text-center">
                                   <div className="flex justify-center gap-2">
                                     <button onClick={() => setAdminQrModalUser(c)} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-xl cursor-pointer"><QrCode size={14} /></button>
-                                    <button onClick={() => confirm(`Delete ${c.givenName}?`) && onDeleteQrClient(c.id)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl cursor-pointer"><Trash2 size={16} /></button>
+                                      <button onClick={async () => {
+                                        const result = await Swal.fire({
+                                          title: "Delete QR client?",
+                                          text: `Are you sure you want to delete ${c.givenName}?`,
+                                          icon: "warning",
+                                          showCancelButton: true,
+                                          confirmButtonText: "Delete",
+                                          cancelButtonText: "Cancel",
+                                          confirmButtonColor: "#e11d48",
+                                          cancelButtonColor: "#64748b",
+                                          reverseButtons: true,
+                                        });
+                                        if (result.isConfirmed) onDeleteQrClient(c.id);
+                                      }} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl cursor-pointer"><Trash2 size={16} /></button>
                                   </div>
                                 </td>
                               </tr>
@@ -1811,6 +2088,36 @@ export const AdminDashboard = ({
                           )}
                         </tbody>
                       </table>
+                    </div>
+                    <div className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+                      <span className="font-mono">
+                        Showing {filteredQrClients.length === 0 ? 0 : (qrPage - 1) * qrRowsPerPage + 1}
+                        {" - "}
+                        {Math.min(qrPage * qrRowsPerPage, filteredQrClients.length)}
+                        {" of "}
+                        {filteredQrClients.length} QR registrants
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setQrPage((page) => Math.max(1, page - 1))}
+                          disabled={qrPage === 1}
+                          className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-slate-600 font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100"
+                        >
+                          Previous
+                        </button>
+                        <span className="font-mono font-bold text-slate-700">
+                          Page {qrPage} / {qrTotalPages}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setQrPage((page) => Math.min(qrTotalPages, page + 1))}
+                          disabled={qrPage === qrTotalPages}
+                          className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-slate-600 font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100"
+                        >
+                          Next
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1822,9 +2129,17 @@ export const AdminDashboard = ({
                         <h1 className="text-xl sm:text-2xl font-black text-slate-850 tracking-tight">
                           QR Code Entrance
                         </h1>
-                        <p className="text-xs text-slate-400 italic mt-0.5">
-                          Home / QR Code Entrance Table
-                        </p>
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-3 mt-1">
+                          <p className="text-xs text-slate-400 italic">
+                            Home / QR Code Entrance Table
+                          </p>
+                          <button
+                            onClick={handleDownloadQrEntrance}
+                            className="w-fit px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black rounded-lg shadow-sm transition-all flex items-center gap-1.5 uppercase tracking-wide cursor-pointer"
+                          >
+                            <FileSpreadsheet size={14} /> Download Excel
+                          </button>
+                        </div>
                       </div>
                     </div>
 
@@ -1891,13 +2206,14 @@ export const AdminDashboard = ({
                               <th className="px-4 py-3.5 text-left text-xs font-bold text-gray-500">Visitor</th>
                               <th className="px-4 py-3.5 text-left text-xs font-bold text-gray-500">QR Pass Code</th>
                               <th className="px-4 py-3.5 text-left text-xs font-bold text-gray-500">Target Floor / Area</th>
+                              <th className="px-4 py-3.5 text-left text-xs font-bold text-gray-500">Wi-Fi Voucher</th>
                               <th className="px-4 py-3.5 text-left text-xs font-bold text-gray-500">Patron Type</th>
                             </tr>
                           </thead>
                           <tbody className="bg-white divide-y divide-gray-150 text-xs text-slate-800">
                             {filteredQrEntranceLogs.length === 0 ? (
                               <tr>
-                                <td colSpan={5} className="px-6 py-12 text-center text-slate-405 italic font-mono uppercase bg-slate-50/40">
+                                <td colSpan={6} className="px-6 py-12 text-center text-slate-405 italic font-mono uppercase bg-slate-50/40">
                                   No QR code entrance records yet.
                                 </td>
                               </tr>
@@ -1908,6 +2224,19 @@ export const AdminDashboard = ({
                                   <td className="px-4 py-3.5 font-bold text-[#1E3A8A] uppercase">{l.visitorsName}</td>
                                   <td className="px-4 py-3.5 font-mono text-[11px] text-cyan-700 font-bold whitespace-nowrap">{l.rfid}</td>
                                   <td className="px-4 py-3.5 font-bold text-slate-800 whitespace-nowrap">{l.qrEntranceArea || l.terminalLocation || l.area}</td>
+                                  <td className="px-4 py-3.5 whitespace-nowrap">
+                                    {(l.services || []).some((service) => String(service).toLowerCase().includes("wifi") || String(service).toLowerCase().includes("voucher")) ? (
+                                      <div className="space-y-0.5">
+                                        <span className="inline-block bg-emerald-50 text-emerald-800 text-[10px] font-extrabold uppercase py-0.5 px-2 rounded-md border border-emerald-200">
+                                          1 Hour Voucher
+                                        </span>
+                                        {l.voucherCode && <div className="font-mono text-[9px] text-emerald-700">{l.voucherCode}</div>}
+                                        {l.voucherExpiresAt && <div className="text-[9px] text-slate-500">Expires {new Date(l.voucherExpiresAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}</div>}
+                                      </div>
+                                    ) : (
+                                      <span className="text-[10px] text-slate-400 font-medium">—</span>
+                                    )}
+                                  </td>
                                   <td className="px-4 py-3.5 whitespace-nowrap">
                                     <span className="bg-slate-100 text-slate-800 text-[10px] font-extrabold uppercase py-0.5 px-2 rounded-md border border-slate-205">
                                       {l.patronType}
@@ -1969,14 +2298,19 @@ export const AdminDashboard = ({
                         </div>
                         <div className="flex flex-wrap gap-2 items-center">
                           <button
-                            onClick={() => {
-                              if (
-                                confirm(
-                                  "Irreversible Purge! Commencing command. Reset all logged visitor data?",
-                                )
-                              ) {
-                                onClearLogs();
-                              }
+                            onClick={async () => {
+                              const result = await Swal.fire({
+                                title: "Purge visitor ledger?",
+                                text: "This will reset all logged visitor data. This action cannot be undone.",
+                                icon: "warning",
+                                showCancelButton: true,
+                                confirmButtonText: "Purge ledger",
+                                cancelButtonText: "Cancel",
+                                confirmButtonColor: "#e11d48",
+                                cancelButtonColor: "#64748b",
+                                reverseButtons: true,
+                              });
+                              if (result.isConfirmed) onClearLogs();
                             }}
                             className="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-xl text-xs font-bold uppercase transition-all flex items-center gap-1 cursor-pointer"
                           >
@@ -2374,6 +2708,12 @@ export const AdminDashboard = ({
                             <h2 className="text-sm font-black text-slate-800 uppercase tracking-wider">CPLRC SUB — RFID Visitor Table</h2>
                             <p className="text-xs text-slate-500 mt-1">Visits recorded through the CPLRC SUB scanner only.</p>
                           </div>
+                          <button
+                            onClick={handleDownloadCplrcSub}
+                            className="w-fit px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black rounded-lg shadow-sm transition-all flex items-center gap-1.5 uppercase tracking-wide cursor-pointer"
+                          >
+                            <FileSpreadsheet size={14} /> Download Excel
+                          </button>
                           <div className="flex flex-col sm:flex-row flex-wrap gap-2 w-full md:w-auto">
                             <input
                               type="date"
@@ -2417,18 +2757,26 @@ export const AdminDashboard = ({
                               <th className="px-5 py-3.5">Date &amp; Time</th>
                               <th className="px-5 py-3.5">Visitor</th>
                               <th className="px-5 py-3.5">RFID Code</th>
+                              <th className="px-5 py-3.5">Institution</th>
+                              <th className="px-5 py-3.5">Age Bracket</th>
+                              <th className="px-5 py-3.5">Gender</th>
+                              <th className="px-5 py-3.5">Patron Type</th>
                               <th className="px-5 py-3.5">Services Required</th>
                             </tr>
                           </thead>
                           <tbody className="bg-white divide-y divide-gray-200 text-xs text-slate-800">
                             {filteredCplrcSubLogs.length === 0 ? (
-                              <tr><td colSpan={4} className="px-5 py-12 text-center text-slate-400 italic font-mono uppercase">No CPLRC SUB scanner records match the active filters.</td></tr>
+                              <tr><td colSpan={8} className="px-5 py-12 text-center text-slate-400 italic font-mono uppercase">No CPLRC SUB scanner records match the active filters.</td></tr>
                             ) : (
                               filteredCplrcSubLogs.map((log) => (
                                 <tr key={log.id} className="hover:bg-violet-50/40 transition-colors">
                                   <td className="px-5 py-3.5 font-mono text-[11px] text-slate-600 whitespace-nowrap">{log.formattedDate}</td>
                                   <td className="px-5 py-3.5 font-bold text-slate-900 uppercase">{log.visitorsName}</td>
                                   <td className="px-5 py-3.5 font-mono font-bold text-violet-700 whitespace-nowrap">{log.rfid}</td>
+                                  <td className="px-5 py-3.5 font-medium text-slate-700">{log.institution}</td>
+                                  <td className="px-5 py-3.5 font-mono text-slate-600 whitespace-nowrap">{log.ageBracket}</td>
+                                  <td className="px-5 py-3.5 text-slate-700">{log.gender}</td>
+                                  <td className="px-5 py-3.5 font-bold text-slate-700 whitespace-nowrap">{log.patronType}</td>
                                   <td className="px-5 py-3.5"><div className="flex flex-wrap gap-1">{(log.services || []).map((service) => <span key={service} className="bg-violet-50 text-violet-800 border border-violet-100 px-2 py-0.5 rounded-md text-[10px] font-bold">{service}</span>)}</div></td>
                                 </tr>
                               ))
@@ -2701,20 +3049,38 @@ export const AdminDashboard = ({
 
                   <div>
                     <label className="text-[9px] font-mono font-bold text-slate-400 block mb-1 uppercase">
+                      Room
+                    </label>
+                    <select
+                      value={newResRoom}
+                      onChange={(e) => {
+                        setNewResRoom(e.target.value);
+                        setNewResTimeSlot("");
+                      }}
+                      className="border border-gray-300 rounded-xl px-2 py-2 text-[10px] w-full focus:ring-1 focus:ring-blue-500 focus:outline-none text-slate-700 bg-slate-50 font-semibold"
+                    >
+                      {rooms.map((room) => (
+                        <option key={room.name} value={room.name} disabled={!room.enabled}>
+                          {room.enabled ? room.name : `${room.name} - Unavailable`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[9px] font-mono font-bold text-slate-400 block mb-1 uppercase">
                       Time Slot
                     </label>
                     <select
                       value={newResTimeSlot}
                       onChange={(e) => setNewResTimeSlot(e.target.value)}
                       className="border border-gray-300 rounded-xl px-2 py-2 text-[10px] w-full focus:ring-1 focus:ring-blue-500 focus:outline-none text-slate-700 bg-slate-50 font-semibold"
+                      required
                     >
-                      <option value="AM (8:00 AM - 12:00 PM)">
-                        AM (8-12)
-                      </option>
-                      <option value="PM (1:00 PM - 5:00 PM)">PM (1-5)</option>
-                      <option value="Full Day (8:00 AM - 5:00 PM)">
-                        Full Day
-                      </option>
+                      <option value="">Select Time</option>
+                      {adminReservationTimeSlots.map((slot) => (
+                        <option key={slot} value={slot}>{slot}</option>
+                      ))}
                     </select>
                   </div>
 
@@ -2772,7 +3138,7 @@ export const AdminDashboard = ({
                             </td>
                           </tr>
                         ) : (
-                          reservations.map((res) => (
+                          paginatedReservations.map((res) => (
                             <tr
                               key={res.id}
                               className="hover:bg-slate-50 transition-colors"
@@ -2896,6 +3262,37 @@ export const AdminDashboard = ({
                       </tbody>
                     </table>
                   </div>
+
+                  <div className="px-1 pt-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+                    <span className="font-mono">
+                      Showing {reservations.length === 0 ? 0 : (reservationPage - 1) * reservationsRowsPerPage + 1}
+                      {" - "}
+                      {Math.min(reservationPage * reservationsRowsPerPage, reservations.length)}
+                      {" of "}
+                      {reservations.length} reservations
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setReservationPage((page) => Math.max(1, page - 1))}
+                        disabled={reservationPage === 1}
+                        className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-slate-600 font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100"
+                      >
+                        Previous
+                      </button>
+                      <span className="font-mono font-bold text-slate-700">
+                        Page {reservationPage} / {reservationTotalPages}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setReservationPage((page) => Math.min(reservationTotalPages, page + 1))}
+                        disabled={reservationPage === reservationTotalPages}
+                        className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-slate-600 font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2907,10 +3304,10 @@ export const AdminDashboard = ({
           {sidebarTab === "settings" && effectiveRole === "superadmin" && (
             <div className="bg-white rounded-3xl shadow-sm border border-gray-200/80 overflow-hidden animate-in fade-in duration-300">
               {/* Tabs strip matching Visitors design */}
-              <div className="flex flex-wrap border-b border-gray-200 bg-slate-50/50 p-2 gap-1">
+              <div className="flex flex-nowrap overflow-x-auto border-b border-gray-200 bg-slate-50/50 p-2 gap-1 [scrollbar-width:thin]">
                 <button
                   onClick={() => setSettingsTab("institutions")}
-                  className={`px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wide transition-all flex items-center gap-2 ${
+                  className={`shrink-0 px-4 sm:px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wide transition-all flex items-center gap-2 ${
                     settingsTab === "institutions"
                       ? "bg-white text-blue-700 shadow-sm border border-gray-200/40"
                       : "text-gray-500 hover:text-gray-800 hover:bg-slate-100/50"
@@ -2920,7 +3317,7 @@ export const AdminDashboard = ({
                 </button>
                 <button
                   onClick={() => setSettingsTab("patrons")}
-                  className={`px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wide transition-all flex items-center gap-2 ${
+                  className={`shrink-0 px-4 sm:px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wide transition-all flex items-center gap-2 ${
                     settingsTab === "patrons"
                       ? "bg-white text-blue-700 shadow-sm border border-gray-200/40"
                       : "text-gray-500 hover:text-gray-800 hover:bg-slate-100/50"
@@ -2928,9 +3325,19 @@ export const AdminDashboard = ({
                 >
                   <Users size={16} /> Patron Identifications
                 </button>
+                <button
+                  onClick={() => setSettingsTab("rooms")}
+                  className={`shrink-0 px-4 sm:px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wide transition-all flex items-center gap-2 ${
+                    settingsTab === "rooms"
+                      ? "bg-white text-blue-700 shadow-sm border border-gray-200/40"
+                      : "text-gray-500 hover:text-gray-800 hover:bg-slate-100/50"
+                  }`}
+                >
+                  <Calendar size={16} /> Room Settings
+                </button>
               </div>
 
-              <div className="p-6">
+              <div className="p-4 sm:p-6">
                 {settingsTab === "institutions" && (
                   <div className="space-y-6 animate-in slide-in-from-bottom-2 duration-300">
                     <div>
@@ -2941,7 +3348,7 @@ export const AdminDashboard = ({
                         Configure the list of campuses and offices available for member registration.
                       </p>
 
-                      <div className="flex gap-2 mb-6 max-w-2xl">
+                      <div className="flex flex-col sm:flex-row gap-2 mb-6 max-w-2xl">
                         <input
                           type="text"
                           value={newInstInput}
@@ -2967,7 +3374,26 @@ export const AdminDashboard = ({
                             <div key={index} className="px-4 py-3.5 flex items-center justify-between hover:bg-slate-50 transition-colors group">
                               <span className="text-xs font-bold text-slate-700 uppercase">{inst}</span>
                               <button
-                                onClick={() => confirm(`Remove "${inst}"?`) && setInstitutions(institutions.filter((_, i) => i !== index))}
+                                onClick={async () => {
+                                  const result = await Swal.fire({
+                                    title: "Remove institution?",
+                                    text: `Are you sure you want to remove "${inst}"?`,
+                                    icon: "warning",
+                                    showCancelButton: true,
+                                    confirmButtonText: "Remove",
+                                    cancelButtonText: "Cancel",
+                                    confirmButtonColor: "#e11d48",
+                                    cancelButtonColor: "#64748b",
+                                    reverseButtons: true,
+                                  });
+                                  if (!result.isConfirmed) return;
+                                  try {
+                                    await api.settings.removeInstitution(inst);
+                                    setInstitutions((current) => current.filter((item) => item !== inst));
+                                  } catch (error) {
+                                    alert(error.message || "Unable to remove institution.");
+                                  }
+                                }}
                                 className="p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all md:opacity-0 group-hover:opacity-100 cursor-pointer"
                               >
                                 <Trash2 size={14} />
@@ -2990,7 +3416,7 @@ export const AdminDashboard = ({
                         Update the classification levels for library users (e.g., Guest Speaker, Researcher).
                       </p>
 
-                      <div className="flex gap-2 mb-6 max-w-2xl">
+                      <div className="flex flex-col sm:flex-row gap-2 mb-6 max-w-2xl">
                         <input
                           type="text"
                           value={newPatronInput}
@@ -3016,11 +3442,103 @@ export const AdminDashboard = ({
                             <div key={index} className="px-4 py-3.5 flex items-center justify-between hover:bg-slate-50 transition-colors group">
                               <span className="text-xs font-bold text-slate-700 uppercase">{type}</span>
                               <button
-                                onClick={() => confirm(`Remove "${type}"?`) && setPatronTypes(patronTypes.filter((_, i) => i !== index))}
+                                onClick={async () => {
+                                  const result = await Swal.fire({
+                                    title: "Remove patron type?",
+                                    text: `Are you sure you want to remove "${type}"?`,
+                                    icon: "warning",
+                                    showCancelButton: true,
+                                    confirmButtonText: "Remove",
+                                    cancelButtonText: "Cancel",
+                                    confirmButtonColor: "#e11d48",
+                                    cancelButtonColor: "#64748b",
+                                    reverseButtons: true,
+                                  });
+                                  if (!result.isConfirmed) return;
+                                  try {
+                                    await api.settings.removePatronType(type);
+                                    setPatronTypes((current) => {
+                                      const nextPatronTypes = current.filter((item) => item !== type);
+                                      localStorage.setItem("plrc_patron_types", JSON.stringify(nextPatronTypes));
+                                      return nextPatronTypes;
+                                    });
+                                  } catch (error) {
+                                    alert(error.message || "Unable to remove patron type.");
+                                  }
+                                }}
                                 className="p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all md:opacity-0 group-hover:opacity-100 cursor-pointer"
                               >
                                 <Trash2 size={14} />
                               </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {settingsTab === "rooms" && (
+                  <div className="space-y-6 animate-in slide-in-from-bottom-2 duration-300">
+                    <div>
+                      <h3 className="text-sm font-black text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-2">
+                        Room Availability Management
+                      </h3>
+                      <p className="text-[11px] text-slate-500 mb-6">
+                        Add booking rooms, or disable a room while it is under maintenance or already unavailable. Disabled rooms cannot be selected in the client reservation form.
+                      </p>
+
+                      <div className="flex flex-col sm:flex-row gap-2 mb-6 max-w-2xl">
+                        <input
+                          type="text"
+                          value={newRoomInput}
+                          onChange={(e) => setNewRoomInput(e.target.value)}
+                          placeholder="Enter new room name..."
+                          className="flex-1 border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none font-semibold text-slate-700 bg-slate-50"
+                          onKeyDown={(e) => e.key === "Enter" && handleAddRoom()}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddRoom}
+                          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all shadow-md cursor-pointer"
+                        >
+                          Add Room
+                        </button>
+                      </div>
+
+                      <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white max-w-3xl">
+                        <div className="bg-slate-50 px-4 py-3 border-b border-gray-200 text-[10px] font-black text-gray-500 uppercase tracking-widest">
+                          Booking Rooms ({rooms.length})
+                        </div>
+                        <div className="divide-y divide-gray-100">
+                          {rooms.map((room) => (
+                            <div key={room.name} className="px-4 py-3.5 flex flex-col sm:flex-row sm:items-center gap-3 justify-between hover:bg-slate-50 transition-colors">
+                              <div>
+                                <div className="text-xs font-bold text-slate-700 uppercase">{room.name}</div>
+                                {!room.enabled && <div className="text-[10px] font-semibold text-rose-600 mt-1">Unavailable: {room.disabledReason || "Unavailable"}</div>}
+                                <div className="text-[10px] font-semibold text-slate-500 mt-1">
+                                  {room.timeSlots?.length || getDefaultRoomTimeSlots(room.name).length} configured time slots
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => configureRoomTimeSlots(room)}
+                                  className="px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-colors cursor-pointer bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200"
+                                >
+                                  Configure Times
+                                </button>
+                                <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-md ${room.enabled ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-700"}`}>
+                                  {room.enabled ? "Available" : "Disabled"}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleRoomAvailability(room.name)}
+                                  className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-colors cursor-pointer ${room.enabled ? "bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200" : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"}`}
+                                >
+                                  {room.enabled ? "Disable" : "Enable"}
+                                </button>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -3034,11 +3552,214 @@ export const AdminDashboard = ({
         </div>
       </div>
 
+      {roomDisableModal && (
+        <div
+          className="fixed inset-0 z-[96] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setRoomDisableModal(null);
+          }}
+        >
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-rose-100 overflow-hidden">
+            <div className="bg-gradient-to-r from-rose-700 to-rose-500 px-5 py-4 text-white flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-rose-100">
+                  Disable Room
+                </p>
+                <h3 className="text-lg font-black mt-1">{roomDisableModal.roomName}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRoomDisableModal(null)}
+                className="p-1.5 rounded-lg text-rose-100 hover:text-white hover:bg-white/15 transition-colors"
+                title="Close disable room dialog"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-5">
+              <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1.5">
+                Why is this room unavailable?
+              </label>
+              <textarea
+                autoFocus
+                value={roomDisableModal.reason}
+                onChange={(event) =>
+                  setRoomDisableModal((current) => ({ ...current, reason: event.target.value }))
+                }
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) confirmRoomDisable();
+                }}
+                rows={4}
+                placeholder="For example: Maintenance or reserved for a private event"
+                className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-800 bg-slate-50 focus:outline-none focus:ring-1 focus:ring-rose-500 resize-none"
+              />
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRoomDisableModal(null)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-[10px] font-black uppercase tracking-wider hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmRoomDisable}
+                  disabled={!roomDisableModal.reason.trim()}
+                  className="px-4 py-2 rounded-xl bg-rose-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Disable Room
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {roomTimeSlotEditor && (
+        <div
+          className="fixed inset-0 z-[95] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setRoomTimeSlotEditor(null);
+          }}
+        >
+          <div className="w-full max-w-lg my-auto bg-white rounded-2xl shadow-2xl border border-blue-100 overflow-hidden">
+            <div className="bg-gradient-to-r from-[#1E3A8A] to-blue-600 px-5 py-4 text-white flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-blue-100">
+                  Reservation Time Settings
+                </p>
+                <h3 className="text-lg font-black mt-1">{roomTimeSlotEditor.roomName}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRoomTimeSlotEditor(null)}
+                className="p-1.5 rounded-lg text-blue-100 hover:text-white hover:bg-white/15 transition-colors"
+                title="Close time settings"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-5">
+              <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1.5">
+                Time Slots
+              </label>
+              <textarea
+                value={roomTimeSlotEditor.timeSlots}
+                onChange={(event) =>
+                  setRoomTimeSlotEditor((current) => ({
+                    ...current,
+                    timeSlots: event.target.value,
+                  }))
+                }
+                rows={5}
+                placeholder="8:00am-9:00am, 9:00am-10:00am"
+                className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-800 bg-slate-50 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+              />
+              <p className="text-[10px] text-slate-400 mt-2">
+                Separate each available time slot with a comma.
+              </p>
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRoomTimeSlotEditor(null)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-[10px] font-black uppercase tracking-wider hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveRoomTimeSlots}
+                  className="px-4 py-2 rounded-xl bg-blue-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-blue-700 shadow-sm"
+                >
+                  Save Time Slots
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedCalendarReservationDate && (
+        <div
+          className="fixed inset-0 z-[85] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setSelectedCalendarReservationDate(null);
+          }}
+        >
+          <div className="w-full max-w-2xl my-auto bg-white rounded-2xl shadow-2xl border border-blue-100 overflow-hidden">
+            <div className="bg-gradient-to-r from-[#1E3A8A] to-blue-600 px-5 py-4 text-white flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-blue-100">CPLRC Calendar Reservations</p>
+                <h3 className="text-lg font-black mt-1">Reservations for {selectedCalendarReservationDate}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedCalendarReservationDate(null)}
+                className="p-1.5 rounded-lg text-blue-100 hover:text-white hover:bg-white/15 transition-colors"
+                title="Close reservation details"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-5 max-h-[65vh] overflow-y-auto">
+              {(() => {
+                const selectedDayReservations = reservations.filter(
+                  (reservation) => reservation.date === selectedCalendarReservationDate,
+                );
+
+                if (selectedDayReservations.length === 0) {
+                  return (
+                    <div className="py-10 text-center text-slate-500">
+                      <Calendar size={28} className="mx-auto text-slate-300 mb-2" />
+                      <p className="text-sm font-bold">No reservation requests for this date.</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="space-y-3">
+                    <p className="text-[11px] text-slate-500 font-semibold">
+                      {selectedDayReservations.length} reservation{selectedDayReservations.length > 1 ? "s" : ""} found
+                    </p>
+                    {selectedDayReservations.map((reservation) => (
+                      <div key={reservation.id} className="border border-slate-200 rounded-xl p-4 bg-slate-50/70">
+                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                          <div>
+                            <h4 className="text-sm font-black text-slate-800 uppercase">{reservation.name || "Guest"}</h4>
+                            <p className="text-[11px] font-bold text-slate-500 mt-1">{reservation.patronType || "Library Guest"}</p>
+                          </div>
+                          <span className={`w-fit px-2 py-1 rounded-md text-[9px] font-black uppercase ${reservation.status === "APPROVED" ? "bg-blue-100 text-blue-800" : reservation.status === "REJECTED" ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-800"}`}>
+                            {reservation.status || "PENDING"}
+                          </span>
+                        </div>
+                        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 text-xs">
+                          <div className="bg-white border border-slate-150 rounded-lg px-3 py-2">
+                            <dt className="text-[9px] font-black uppercase tracking-wider text-slate-400">Time</dt>
+                            <dd className="font-bold text-slate-700 mt-0.5">{reservation.timeSlot || "Time to be confirmed"}</dd>
+                          </div>
+                          <div className="bg-white border border-slate-150 rounded-lg px-3 py-2">
+                            <dt className="text-[9px] font-black uppercase tracking-wider text-slate-400">Room</dt>
+                            <dd className="font-bold text-slate-700 mt-0.5">{reservation.room || "General Space"}</dd>
+                          </div>
+                        </dl>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
       {rejectingReservation && (
-        <div className="fixed inset-0 z-[90] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[90] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
           <form
             onSubmit={handleSubmitReservationRejection}
-            className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-rose-100 p-5"
+            className="w-full max-w-md my-auto bg-white rounded-2xl shadow-2xl border border-rose-100 p-4 sm:p-5"
           >
             <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-3">
               <div>
@@ -3100,11 +3821,11 @@ export const AdminDashboard = ({
       {/* ==================== NEW RECORD FORM MODAL (IMAGE PERFECT) ================ */}
       {/* ========================================================================= */}
       {showNewUserModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full overflow-hidden my-8 animate-in fade-in zoom-in-95 duration-200 border border-slate-200">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full overflow-hidden my-auto sm:my-8 animate-in fade-in zoom-in-95 duration-200 border border-slate-200">
             {/* Modal Header bar */}
-            <div className="bg-blue-600 px-6 py-4 flex justify-between items-center text-white border-b border-blue-700">
-              <h1 className="text-xl font-extrabold tracking-tight select-none">
+            <div className="bg-blue-600 px-4 sm:px-6 py-4 flex justify-between items-center text-white border-b border-blue-700">
+              <h1 className="text-lg sm:text-xl font-extrabold tracking-tight select-none">
                 {editingUser ? "Edit Member Record" : "New Record"}
               </h1>
               <button
@@ -3121,7 +3842,7 @@ export const AdminDashboard = ({
             {/* Modal Contents Form */}
             <form
               onSubmit={handleFormSubmit}
-              className="p-6 overflow-y-auto max-h-[80vh] font-sans"
+              className="p-4 sm:p-6 overflow-y-auto max-h-[78vh] font-sans"
             >
               {/* Form Input Columns: matched EXACTLY with Picture */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
@@ -3216,12 +3937,10 @@ export const AdminDashboard = ({
                       value={formData.gender}
                       onChange={handleInputChange}
                     >
+                      <option value="" disabled>-- Choose Gender --</option>
                       <option value="Male">Male</option>
                       <option value="Female">Female</option>
-                      <option value="Other">Other</option>
-                      <option value="Prefer not to say">
-                        Prefer not to say
-                      </option>
+                      
                     </select>
                   </div>
 
@@ -3236,7 +3955,7 @@ export const AdminDashboard = ({
                       value={formData.institution}
                       onChange={handleInputChange}
                     >
-                      <option value="">-- Choose Registered Institution --</option>
+                      <option value="" disabled>-- Choose Registered Institution --</option>
                       {institutions.map((inst, idx) => (
                         <option key={idx} value={inst}>
                           {inst}
@@ -3320,6 +4039,7 @@ export const AdminDashboard = ({
                       value={formData.maritalStatus}
                       onChange={handleInputChange}
                     >
+                      <option value="" disabled>-- MARITAL STATUS --</option>
                       <option value="Single">Single</option>
                       <option value="Married">Married</option>
                       <option value="Widowed">Widowed</option>
@@ -3458,56 +4178,54 @@ export const AdminDashboard = ({
               <X size={18} />
             </button>
             <div className="flex justify-center">
-              <div className="w-full bg-white border border-slate-300 rounded-xl p-5 shadow-inner text-slate-900 border-t-[6px] border-t-emerald-600 relative overflow-hidden">
+              <div className="w-full max-w-[320px] bg-white border border-slate-300 rounded-2xl p-3 sm:p-4 shadow-inner text-slate-900 relative overflow-hidden">
                 {/* ID Background Image */}
                 <img src="img/id.png" alt="" className="absolute inset-0 w-full h-full object-cover pointer-events-none" />
-                <div className="absolute top-2 right-2 text-[7px] font-mono text-emerald-600 bg-emerald-50 border border-emerald-200 px-1 py-0.2 rounded uppercase font-black">REGISTRY PASS</div>
-                <div className="flex justify-center mb-1">
-                  <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center p-1 border border-slate-150">
-                    <PLRCLogo size={24} />
+                <div className="relative z-10">
+                  <div className="absolute top-0 right-0 font-mono text-[7px] text-slate-400 tracking-wider">
+                    MEMBER PASS • STATE DIGITAL GATE
                   </div>
-                </div>
-                <label className="text-[10px] font-black text-[#1E3A8A] uppercase tracking-wide block">Cagayan Provincial Library</label>
-                <div className="my-3 h-px bg-slate-100" />
-                <div className="flex items-center justify-center">
-                  <div className="p-2 bg-white/85 border border-slate-200 rounded-xl w-40 h-40 flex items-center justify-center shadow-inner">
+                  <div className="flex gap-2 sm:gap-4 items-center mb-4 min-w-0 pr-1">
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-slate-100 flex items-center justify-center border border-slate-300 shrink-0">
+                      <PLRCLogo size={28} />
+                    </div>
+                    <div>
+                      <h3 className="text-[10px] font-black tracking-tight leading-none uppercase text-slate-900">
+                        Provincial of Cagayan
+                      </h3>
+                      <p className="text-[7.5px] font-mono font-bold text-slate-500 tracking-wide mt-1 uppercase break-words">
+                        Cagayan Provincial Learning and Resource Center
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-200 p-3 rounded-lg flex justify-center mb-4 shadow-inner">
                     {adminQrCodeUrl ? (
-                      <img src={adminQrCodeUrl} alt="QR Pass" className="w-full h-full rounded mix-blend-multiply" />
+                      <img src={adminQrCodeUrl} alt="QR Pass" className="w-32 h-32 sm:w-36 sm:h-36 rounded mix-blend-multiply" />
                     ) : (
                       <div className="h-6 w-6 border-2 border-emerald-600 animate-spin border-t-transparent rounded-full" />
                     )}
                   </div>
-                </div>
-                {/* High Fidelity ID Details */}
-                <div className="text-left mt-3 text-[9px] font-sans text-slate-800 space-y-1 bg-white/60 backdrop-blur-xs border border-slate-200 p-2 rounded-lg">
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-16 font-mono text-slate-500 font-bold uppercase tracking-tighter">LAST NAME:</span>
-                    <div className="flex items-center gap-1 truncate text-slate-950 font-black uppercase">
-                      <span className="text-blue-600">▶</span> {adminQrModalUser.lastName}
+                  <div className="space-y-1.5 font-sans border-t border-slate-200/50 pt-3 text-left">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[8px] font-mono text-slate-500 w-20 shrink-0 uppercase">Full name</span>
+                      <span className="text-[10px] font-black text-slate-900 uppercase truncate min-w-0"><span className="text-blue-600">▶</span> {[adminQrModalUser.givenName, adminQrModalUser.middleName, adminQrModalUser.lastName].filter(Boolean).join(" ")}</span>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-16 font-mono text-slate-500 font-bold uppercase tracking-tighter">FIRST NAME:</span>
-                    <div className="flex items-center gap-1 truncate text-slate-950 font-black uppercase">
-                      <span className="text-blue-600">▶</span> {adminQrModalUser.givenName}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[8px] font-mono text-slate-500 w-20 shrink-0 uppercase">Patron Type</span>
+                      <span className="text-[9px] font-black text-emerald-700 uppercase truncate min-w-0"><span className="text-blue-600">▶</span> {adminQrModalUser.patronIdentification || adminQrModalUser.patronType || "N/A"}</span>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-16 font-mono text-slate-500 font-bold uppercase tracking-tighter">MID NAME:</span>
-                    <div className="flex items-center gap-1 truncate text-slate-950 font-black uppercase">
-                      <span className="text-blue-600">▶</span> {adminQrModalUser.middleName || "N/A"}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[8px] font-mono text-slate-500 w-20 shrink-0 uppercase">ADDRESS:</span>
+                      <span className="text-[9px] font-bold text-slate-800 italic truncate min-w-0"><span className="text-blue-600">▶</span> {adminQrModalUser.address || "CAGAYAN PROVINCE"}</span>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-16 font-mono text-slate-500 font-bold uppercase tracking-tighter">BIRTHDAY:</span>
-                    <div className="flex items-center gap-1 truncate text-slate-900 font-bold">
-                      <span className="text-blue-600">▶</span> {adminQrModalUser.birthday || "N/A"}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[8px] font-mono text-slate-500 w-20 shrink-0 uppercase">INSTITUTION:</span>
+                      <span className="text-[9px] font-bold text-slate-800 italic truncate min-w-0"><span className="text-blue-600">▶</span> {adminQrModalUser.institution || "N/A"}</span>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-16 font-mono text-slate-500 font-bold uppercase tracking-tighter">ADDRESS:</span>
-                    <div className="flex items-center gap-1 truncate text-slate-900 font-medium italic">
-                      <span className="text-blue-600">▶</span> {adminQrModalUser.address || "CAGAYAN PROVINCE"}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[8px] font-mono text-slate-500 w-20 shrink-0 uppercase">QR CODE:</span>
+                      <span className="text-[10px] font-mono font-black text-cyan-700"><span className="text-blue-600">▶</span> {adminQrModalUser.rfid}</span>
                     </div>
                   </div>
                 </div>

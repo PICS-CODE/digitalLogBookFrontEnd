@@ -1,3 +1,4 @@
+import Swal from "sweetalert2";
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -16,33 +17,51 @@ import {
   Trash2,
   XCircle,
   Lock,
+  BookOpen,
 } from "lucide-react";
 import { PLRCLogo } from "./Logo";
+import { api } from "../services/api";
+import { EResources } from "./EResources";
 
 const RESERVATION_TIME_OPTIONS = [
-  "7:30am-8:30am",
-  "8:30am-9:30am",
-  "9:30am-10:30am",
-  "10:30am-11:30am",
-  "11:30am-12:30pm",
-  "12:30pm-1:30pm",
-  "1:30pm-2:30pm",
-  "2:30pm-3:30pm",
-  "3:30pm-4:30pm",
-  "4:30pm-5:30pm",
-  "5:30pm-6:30pm",
+  "AM (8:00 AM - 12:00 PM)",
+  "PM (1:00 PM - 5:00 PM)",
+  "Full Day (8:00 AM - 5:00 PM)",
 ];
 
-const usesReservationTimeDropdown = (room) =>
-  room === "Ubag Cinema" ||
-  room === "Discussion Room (BIWAG)" ||
-  room === "Discussion Room (MALANA)";
+// Every room uses the times configured in Superadmin Room Settings. Older
+// rooms without a saved configuration retain the standard booking periods.
+const getReservationTimeOptions = (room, roomSettings) => {
+  const configuredRoom = roomSettings.find((item) => item.name === room);
+  return configuredRoom?.timeSlots?.length
+    ? configuredRoom.timeSlots
+    : RESERVATION_TIME_OPTIONS;
+};
+
+const loadSavedRoomTimeSlots = () => {
+  try {
+    return JSON.parse(localStorage.getItem("plrc_rooms") || "[]");
+  } catch (_) {
+    return [];
+  }
+};
+// Keep the client portal on the same selectable booking periods as the
+// admin/superadmin reservation form.
+const usesReservationTimeDropdown = () => true;
 
 const usesFirstComeFirstServedSlots = (room) =>
   room === "Discussion Room (BIWAG)" || room === "Discussion Room (MALANA)";
 
 const isActiveReservation = (reservation) =>
   reservation.status === "PENDING" || reservation.status === "APPROVED";
+
+const DEFAULT_ROOMS = [
+  "Discussion Room (BIWAG)",
+  "Discussion Room (MALANA)",
+  "Conference Room",
+  "Ubag Cinema",
+  "Multimedia Room",
+].map((name) => ({ name, enabled: true, disabledReason: "" }));
 
 const readReservationFile = (file) =>
   new Promise((resolve, reject) => {
@@ -83,22 +102,33 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
   // Local reservation list
   const [myReservations, setMyReservations] = useState([]);
   const [allReservations, setAllReservations] = useState([]);
+  const [reservationPage, setReservationPage] = useState(1);
+  const reservationsRowsPerPage = 10;
   const [readNotificationIds, setReadNotificationIds] = useState([]);
+  const [deletedNotificationIds, setDeletedNotificationIds] = useState([]);
+  const [roomSettings, setRoomSettings] = useState(DEFAULT_ROOMS);
 
   // Local storage calendar state (for custom closed days from admin)
   const [blockedDays, setBlockedDays] = useState({});
 
   useEffect(() => {
-    const saved = localStorage.getItem("plrc_blocked_days");
-    if (saved) {
-      try {
-        setBlockedDays(JSON.parse(saved));
-      } catch (_) {}
-    }
+    Promise.all([api.blockedDays.list(), api.settings.get()]).then(([days, settings]) => {
+      setBlockedDays(Object.fromEntries(days.map((day) => [day.date, { status: day.status, reason: day.reason }])));
+      const savedRooms = loadSavedRoomTimeSlots();
+      setRoomSettings(settings.rooms.map((room) => {
+        const savedRoom = savedRooms.find((item) => item.name === room.name);
+        return room.timeSlots?.length || !savedRoom?.timeSlots?.length
+          ? room
+          : { ...room, timeSlots: savedRoom.timeSlots };
+      }));
+    }).catch((error) => console.warn("Unable to load reservation settings.", error));
   }, []);
 
   const notificationReadStorageKey = loggedInClient
     ? `plrc_read_notifications_${loggedInClient.id || loggedInClient.rfid}`
+    : "";
+  const notificationDeletedStorageKey = loggedInClient
+    ? `plrc_deleted_notifications_${loggedInClient.id || loggedInClient.rfid}`
     : "";
 
   useEffect(() => {
@@ -115,27 +145,28 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
     }
   }, [notificationReadStorageKey]);
 
-  // Load reservations helper
-  const loadReservations = () => {
-    if (!loggedInClient) return;
-    const stored = localStorage.getItem("plrc_reservations");
-    if (stored) {
+  useEffect(() => {
+    if (!notificationDeletedStorageKey) return;
+    const saved = localStorage.getItem(notificationDeletedStorageKey);
+    if (saved) {
       try {
-        const allRes = JSON.parse(stored);
-        setAllReservations(allRes);
-        const filtered = allRes.filter(
-          (r) =>
-            r.name.toLowerCase() ===
-            `${loggedInClient.givenName} ${loggedInClient.lastName}`.toLowerCase(),
-        );
-        setMyReservations(filtered);
-      } catch (e) {
-        console.error("Failed to load reservations", e);
+        setDeletedNotificationIds(JSON.parse(saved));
+      } catch (_) {
+        setDeletedNotificationIds([]);
       }
     } else {
-      setMyReservations([]);
-      setAllReservations([]);
+      setDeletedNotificationIds([]);
     }
+  }, [notificationDeletedStorageKey]);
+
+  // Load reservations helper
+  const loadReservations = async () => {
+    if (!loggedInClient) return;
+    try {
+      const allRes = await api.reservations.list();
+      setAllReservations(allRes);
+      setMyReservations(allRes.filter((r) => r.userId === loggedInClient.id || r.name.toLowerCase() === `${loggedInClient.givenName} ${loggedInClient.lastName}`.toLowerCase()));
+    } catch (error) { console.error("Failed to load reservations", error); }
   };
 
   // Load reservations on load or success
@@ -148,6 +179,54 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
       loadReservations();
     }
   }, [activeTab]);
+
+  // Pull the current superadmin room configuration whenever the client opens
+  // the reservation screen, so BIWAG/MALANA time slots stay synchronized.
+  useEffect(() => {
+    if (activeTab !== "reservation") return;
+    api.settings.get()
+      .then((settings) => {
+        const savedRooms = loadSavedRoomTimeSlots();
+        setRoomSettings(settings.rooms.map((room) => {
+          const savedRoom = savedRooms.find((item) => item.name === room.name);
+          return room.timeSlots?.length || !savedRoom?.timeSlots?.length
+            ? room
+            : { ...room, timeSlots: savedRoom.timeSlots };
+        }));
+      })
+      .catch((error) => console.warn("Unable to refresh room time slots.", error));
+  }, [activeTab]);
+
+  const orderedMyReservations = myReservations
+    .map((reservation, index) => ({ reservation, index }))
+    .sort((a, b) => {
+      if (!a.reservation.createdAt || !b.reservation.createdAt) {
+        return a.reservation.createdAt
+          ? -1
+          : b.reservation.createdAt
+            ? 1
+            : a.index - b.index;
+      }
+      return (
+        new Date(b.reservation.createdAt).getTime() -
+        new Date(a.reservation.createdAt).getTime()
+      );
+    })
+    .map(({ reservation }) => reservation);
+
+  const reservationTotalPages = Math.max(
+    1,
+    Math.ceil(orderedMyReservations.length / reservationsRowsPerPage),
+  );
+  const paginatedMyReservations = orderedMyReservations.slice(
+    (reservationPage - 1) * reservationsRowsPerPage,
+    reservationPage * reservationsRowsPerPage,
+  );
+  const selectedRoomTimeSlots = getReservationTimeOptions(selectedRoom, roomSettings);
+
+  useEffect(() => {
+    setReservationPage((page) => Math.min(page, reservationTotalPages));
+  }, [reservationTotalPages]);
 
   const isReservationSlotTaken = (slot, reservations = allReservations) =>
     usesFirstComeFirstServedSlots(selectedRoom) &&
@@ -164,8 +243,13 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
     (reservation) =>
       reservation.status === "REJECTED" && reservation.rejectionReason,
   );
+  const approvedReservationNotifications = myReservations.filter(
+    (reservation) => reservation.status === "APPROVED",
+  );
   const getRejectedNotificationId = (reservation) =>
     `rejected-${reservation.id}-${reservation.rejectedAt || ""}`;
+  const getApprovedNotificationId = (reservation) =>
+    `approved-${reservation.id}-${reservation.approvedAt || ""}`;
   const isNotificationRead = (notificationId) =>
     readNotificationIds.includes(notificationId);
   const markNotificationAsRead = (notificationId) => {
@@ -176,9 +260,23 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
       localStorage.setItem(notificationReadStorageKey, JSON.stringify(updated));
     }
   };
+  const deleteNotification = (notificationId) => {
+    const updated = [...deletedNotificationIds, notificationId];
+    setDeletedNotificationIds(updated);
+    if (notificationDeletedStorageKey) {
+      localStorage.setItem(notificationDeletedStorageKey, JSON.stringify(updated));
+    }
+  };
+  const visibleRejectedReservationNotifications = rejectedReservationNotifications.filter(
+    (reservation) => !deletedNotificationIds.includes(getRejectedNotificationId(reservation)),
+  );
+  const visibleApprovedReservationNotifications = approvedReservationNotifications.filter(
+    (reservation) => !deletedNotificationIds.includes(getApprovedNotificationId(reservation)),
+  );
   const notificationIds = [
-    "account-activation",
-    ...rejectedReservationNotifications.map(getRejectedNotificationId),
+    ...(deletedNotificationIds.includes("account-activation") ? [] : ["account-activation"]),
+    ...visibleRejectedReservationNotifications.map(getRejectedNotificationId),
+    ...visibleApprovedReservationNotifications.map(getApprovedNotificationId),
   ];
   const unreadNotificationsCount = notificationIds.filter(
     (notificationId) => !isNotificationRead(notificationId),
@@ -231,48 +329,43 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
   };
 
   // Cancel reservation request
-  const handleCancelReservation = (resId) => {
-    if (
-      !window.confirm("Are you sure you want to cancel this booking request?")
-    ) {
+  const handleCancelReservation = async (resId) => {
+    const result = await Swal.fire({
+      title: "Cancel booking request?",
+      text: "Are you sure you want to cancel this booking request?",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Cancel booking",
+      cancelButtonText: "Keep booking",
+      confirmButtonColor: "#e11d48",
+      cancelButtonColor: "#64748b",
+      reverseButtons: true,
+    });
+    if (!result.isConfirmed) {
       return;
     }
-    const stored = localStorage.getItem("plrc_reservations");
-    if (stored) {
-      try {
-        let allRes = JSON.parse(stored);
-        allRes = allRes.map((r) => {
-          if (r.id === resId) {
-            return { ...r, status: "REJECTED" };
-          }
-          return r;
-        });
-        localStorage.setItem("plrc_reservations", JSON.stringify(allRes));
-        loadReservations();
-        setBookingSuccess("Reservation request cancelled successfully.");
-        setTimeout(() => setBookingSuccess(""), 5000);
-      } catch (e) {
-        console.error("Failed to cancel reservation", e);
-      }
-    }
+    try { const current = allReservations.find((r) => r.id === resId); await api.reservations.update({ ...current, status: "REJECTED" }); await loadReservations(); setBookingSuccess("Reservation request cancelled successfully."); setTimeout(() => setBookingSuccess(""), 5000); } catch (error) { console.error("Failed to cancel reservation", error); }
   };
 
   // Delete reservation request
-  const handleDeleteReservation = (resId) => {
-    if (
-      !window.confirm(
-        "Are you sure you want to delete this reservation record?",
-      )
-    ) {
+  const handleDeleteReservation = async (resId) => {
+    const result = await Swal.fire({
+      title: "Delete reservation record?",
+      text: "Are you sure you want to delete this reservation record?",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Delete",
+      cancelButtonText: "Keep record",
+      confirmButtonColor: "#e11d48",
+      cancelButtonColor: "#64748b",
+      reverseButtons: true,
+    });
+    if (!result.isConfirmed) {
       return;
     }
-    const stored = localStorage.getItem("plrc_reservations");
-    if (stored) {
-      try {
-        let allRes = JSON.parse(stored);
-        allRes = allRes.filter((r) => r.id !== resId);
-        localStorage.setItem("plrc_reservations", JSON.stringify(allRes));
-        loadReservations();
+    try {
+        await api.reservations.remove(resId);
+        await loadReservations();
 
         if (editingResId === resId) {
           handleCancelEdit();
@@ -280,30 +373,14 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
 
         setBookingSuccess("Reservation deleted successfully.");
         setTimeout(() => setBookingSuccess(""), 5000);
-      } catch (e) {
-        console.error("Failed to delete reservation", e);
-      }
-    }
+    } catch (error) { console.error("Failed to delete reservation", error); }
   };
 
   // Handle local profile changes simulation
-  const handleProfileSave = (e) => {
+  const handleProfileSave = async (e) => {
     e.preventDefault();
     if (!clientInfo) return;
-    // Save to users list in localStorage
-    const storedUsers = localStorage.getItem("plrc_users");
-    if (storedUsers) {
-      try {
-        const parsedUsers = JSON.parse(storedUsers);
-        const updated = parsedUsers.map((u) =>
-          u.id === clientInfo.id ? clientInfo : u,
-        );
-        localStorage.setItem("plrc_users", JSON.stringify(updated));
-        alert(
-          "Profile details synchronized successfully with Provincial registry!",
-        );
-      } catch (err) {}
-    }
+    try { const saved = await api.users.update(clientInfo); setClientInfo(saved); alert("Profile details synchronized successfully with Provincial registry!"); } catch (error) { alert(`Unable to save profile: ${error.message}`); }
   };
 
   // Create or Update client reservation request
@@ -313,6 +390,12 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
 
     if (selectedRoom === "[Choose Option Below]" || !selectedRoom) {
       alert("Please select a Room option.");
+      return;
+    }
+
+    const selectedRoomSettings = roomSettings.find((room) => room.name === selectedRoom);
+    if (selectedRoomSettings && !selectedRoomSettings.enabled) {
+      alert(`This room is unavailable: ${selectedRoomSettings.disabledReason || "Please choose another room."}`);
       return;
     }
 
@@ -328,7 +411,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
 
     if (
       usesReservationTimeDropdown(selectedRoom) &&
-      !RESERVATION_TIME_OPTIONS.includes(resSlot)
+      !getReservationTimeOptions(selectedRoom, roomSettings).includes(resSlot)
     ) {
       alert("Please choose one of the available reservation time slots.");
       return;
@@ -339,74 +422,79 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
       return;
     }
 
-    // Save to global list
-    const stored = localStorage.getItem("plrc_reservations");
-    let allRes = [];
-    if (stored) {
-      try {
-        allRes = JSON.parse(stored);
-      } catch (e) {}
-    }
-
-    if (isReservationSlotTaken(resSlot, allRes)) {
+    if (isReservationSlotTaken(resSlot, allReservations)) {
       alert("This BIWAG/MALANA time slot is already reserved.");
       loadReservations();
       return;
     }
 
-    if (editingResId) {
-      // Edit mode
-      allRes = allRes.map((r) => {
-        if (r.id === editingResId) {
-          return {
-            ...r,
-            date: resDate,
-            timeSlot: resSlot,
-            purpose: resPurpose,
-            room: selectedRoom,
-            attendees: attendeeCount,
-            attachment: reservationFile,
-            status: "PENDING",
-          };
-        }
-        return r;
-      });
-      localStorage.setItem("plrc_reservations", JSON.stringify(allRes));
-      setBookingSuccess(
-        "Reservation updated successfully! Awaiting review by Jerome Villanueva.",
-      );
-      setEditingResId(null);
-    } else {
-      // Create new mode
-      const newRes = {
-        id: `res-${Date.now()}`,
-        name: `${clientInfo.givenName} ${clientInfo.lastName}`,
-        patronType: clientInfo.patronType,
-        date: resDate,
-        timeSlot: resSlot,
-        purpose: resPurpose,
-        room: selectedRoom,
-        attendees: attendeeCount,
-        attachment: reservationFile,
-        status: "PENDING",
-      };
-      allRes = [newRes, ...allRes];
-      localStorage.setItem("plrc_reservations", JSON.stringify(allRes));
-      setBookingSuccess(
-        "Reservation submitted successfully! Awaiting review by Jerome Villanueva at Staff Desk.",
-      );
-    }
+    try {
+      let savedReservation;
 
-    // Refresh state
-    loadReservations();
-    // Clear state inputs
-    setResPurpose("");
-    setSelectedRoom("[Choose Option Below]");
-    setAttendeeCount("");
-    setResSlot("");
-    setReservationFile(null);
-    setReservationFileInputKey((current) => current + 1);
-    setTimeout(() => setBookingSuccess(""), 5000);
+      if (editingResId) {
+        // Edit mode
+        const current = allReservations.find((r) => r.id === editingResId);
+        savedReservation = await api.reservations.update({
+          ...current,
+          date: resDate,
+          timeSlot: resSlot,
+          purpose: resPurpose,
+          room: selectedRoom,
+          attendees: attendeeCount,
+          attachment: reservationFile,
+          status: "PENDING",
+        });
+        setBookingSuccess(
+          "Reservation updated successfully! Awaiting review by Jerome Villanueva.",
+        );
+        setEditingResId(null);
+      } else {
+        // Create new mode
+        const newRes = {
+          createdAt: new Date().toISOString(),
+          userId: clientInfo.id,
+          name: `${clientInfo.givenName} ${clientInfo.lastName}`,
+          patronType: clientInfo.patronType,
+          date: resDate,
+          timeSlot: resSlot,
+          purpose: resPurpose,
+          room: selectedRoom,
+          attendees: attendeeCount,
+          attachment: reservationFile,
+          status: "PENDING",
+        };
+        savedReservation = await api.reservations.create(newRes);
+        setBookingSuccess(
+          "Reservation submitted successfully! Awaiting review by Jerome Villanueva at Staff Desk.",
+        );
+      }
+
+      if (savedReservation) {
+        setAllReservations((current) =>
+          editingResId
+            ? current.map((reservation) =>
+                reservation.id === savedReservation.id
+                  ? savedReservation
+                  : reservation,
+              )
+            : [savedReservation, ...current],
+        );
+      }
+      await loadReservations();
+
+      // Clear state inputs only after the database confirms the save.
+      setResPurpose("");
+      setSelectedRoom("[Choose Option Below]");
+      setAttendeeCount("");
+      setResSlot("");
+      setReservationFile(null);
+      setReservationFileInputKey((current) => current + 1);
+      setTimeout(() => setBookingSuccess(""), 5000);
+    } catch (error) {
+      console.error("Failed to save reservation", error);
+      setBookingSuccess("");
+      alert(`Unable to save reservation: ${error.message}`);
+    }
   };
 
   // Calendar Helpers
@@ -467,10 +555,10 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
     <div className="flex flex-col lg:flex-row min-h-screen bg-[#F3F4F6] text-slate-900 font-sans antialiased text-left">
       {/* Sidebar navigation panel */}
       <div
-        className={`${sidebarOpen ? "w-full lg:w-64" : "w-full lg:w-20"} bg-white border-b lg:border-b-0 lg:border-r border-gray-200 flex flex-col pt-6 pb-4 shrink-0 transition-all duration-300`}
+        className={`${sidebarOpen ? "w-full lg:w-64" : "w-full lg:w-20"} bg-white border-b lg:border-b-0 lg:border-r border-gray-200 flex flex-col pt-3 lg:pt-6 pb-2 lg:pb-4 shrink-0 transition-all duration-300`}
       >
         {/* Core title branding */}
-        <div className="flex items-center gap-3 px-6 mb-8 overflow-hidden">
+        <div className="flex items-center gap-3 px-4 sm:px-6 mb-4 lg:mb-8 overflow-hidden">
           <PLRCLogo size={42} />
           {sidebarOpen && (
             <div>
@@ -485,10 +573,10 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
         </div>
 
         {/* Dynamic Nav buttons */}
-        <nav className="flex-1 px-4 space-y-1.5 focus:outline-none">
+        <nav className="flex-1 flex lg:block gap-1.5 overflow-x-auto px-3 sm:px-4 pb-1 lg:pb-0 lg:space-y-1.5 focus:outline-none [scrollbar-width:thin]">
           <button
             onClick={() => setActiveTab("information")}
-            className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+            className={`min-w-max lg:w-full flex items-center gap-3 px-3 sm:px-4 py-2.5 lg:py-3.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
               activeTab === "information"
                 ? "bg-blue-50 text-[#1E3A8A] border-l-4 border-[#1E3A8A]"
                 : "text-gray-500 hover:text-gray-800 hover:bg-slate-50"
@@ -500,7 +588,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
 
           <button
             onClick={() => setActiveTab("reservation")}
-            className={`w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+            className={`min-w-max lg:w-full flex items-center justify-between px-3 sm:px-4 py-2.5 lg:py-3.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
               activeTab === "reservation"
                 ? "bg-blue-50 text-[#1E3A8A] border-l-4 border-[#1E3A8A]"
                 : "text-gray-500 hover:text-gray-800 hover:bg-slate-50"
@@ -514,7 +602,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
 
           <button
             onClick={() => setActiveTab("notifications")}
-            className={`w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+            className={`min-w-max lg:w-full flex items-center justify-between px-3 sm:px-4 py-2.5 lg:py-3.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
               activeTab === "notifications"
                 ? "bg-blue-50 text-[#1E3A8A] border-l-4 border-[#1E3A8A]"
                 : "text-gray-500 hover:text-gray-800 hover:bg-slate-50"
@@ -532,8 +620,20 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
           </button>
 
           <button
+            onClick={() => setActiveTab("e-resources")}
+            className={`min-w-max lg:w-full flex items-center gap-3 px-3 sm:px-4 py-2.5 lg:py-3.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+              activeTab === "e-resources"
+                ? "bg-blue-50 text-[#1E3A8A] border-l-4 border-[#1E3A8A]"
+                : "text-gray-500 hover:text-gray-800 hover:bg-slate-50"
+            }`}
+          >
+            <BookOpen size={16} />
+            {sidebarOpen && <span>E-Resources</span>}
+          </button>
+
+          <button
             onClick={onLogout}
-            className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-xs font-black text-rose-500 hover:bg-rose-50 hover:text-rose-700 transition-all cursor-pointer uppercase tracking-wider mt-6"
+            className="min-w-max lg:w-full flex items-center gap-3 px-3 sm:px-4 py-2.5 lg:py-3.5 rounded-xl text-xs font-black text-rose-500 hover:bg-rose-50 hover:text-rose-700 transition-all cursor-pointer uppercase tracking-wider mt-0 lg:mt-6"
           >
             <LogOut size={16} />
             {sidebarOpen && <span>Logout</span>}
@@ -542,7 +642,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
 
         {/* Current profile status strip bottom */}
         {sidebarOpen && (
-          <div className="mt-auto px-6 pt-4 border-t border-slate-100 text-left">
+          <div className="hidden lg:block mt-auto px-6 pt-4 border-t border-slate-100 text-left">
             <span className="text-[10px] font-mono font-bold text-slate-400 block uppercase">
               SECURE DIGITAL CARD
             </span>
@@ -556,7 +656,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
       {/* Main viewport */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top Header matching "CPLRC Online Scheduler for Room" perfectly */}
-        <div className="bg-white border-b border-gray-200 py-4 px-6 flex justify-between items-center select-none">
+        <div className="bg-white border-b border-gray-200 py-3 sm:py-4 px-4 sm:px-6 flex justify-between items-center gap-3 select-none">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -565,16 +665,16 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
               <Menu size={18} />
             </button>
             <div>
-              <h1 className="text-base font-black text-slate-850 tracking-tight uppercase">
-                CPLRC Online Scheduler for Room
+              <h1 className="text-sm sm:text-base font-black text-slate-850 tracking-tight uppercase">
+                CLIENT PORTAL 
               </h1>
-              <p className="text-[10px] text-gray-500 uppercase font-bold tracking-wider mt-0.5">
-                Home / Workspace / Portal
+              <p className="hidden sm:block text-[10px] text-gray-500 uppercase font-bold tracking-wider mt-0.5">
+                Home / Resources / Portal
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 text-xs font-mono font-bold text-slate-500">
+          <div className="hidden md:flex items-center gap-3 text-xs font-mono font-bold text-slate-500 shrink-0">
             <div className="flex items-center gap-1.5">
               <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
               <span>Online Account Access</span>
@@ -588,7 +688,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
         </div>
 
         {/* Workspace Body content */}
-        <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-6">
+        <div className="min-w-0 flex-1 p-3 sm:p-4 md:p-6 overflow-y-auto space-y-4 sm:space-y-6">
           {/* ========================================================= */}
           {/* TAB: INFORMATION (PROFILE + ACCESS CARD PREVIEW) */}
           {/* ========================================================= */}
@@ -598,7 +698,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
               <div className="flex flex-col xl:flex-row items-center xl:items-stretch justify-center gap-6">
                 
                 {/* ACCORDION/PREVIEW: THE HIGH-FIDELITY OFFICIAL ACCREDITED PLRC ACCESS CARD */}
-                <div className="relative w-full max-w-[580px] aspect-[1.58/1] bg-white rounded-2xl shadow-xl border border-slate-300/80 overflow-hidden flex flex-col p-4 select-none text-slate-900 transition-transform duration-300 hover:scale-[1.01]">
+                <div className="relative w-full max-w-[580px] aspect-[1.58/1] bg-white rounded-2xl shadow-xl border border-slate-300/80 overflow-hidden flex flex-col p-2 sm:p-4 select-none text-slate-900 transition-transform duration-300 hover:scale-[1.01]">
                   {/* ID Background Image */}
                   <img 
                     src="img/id.png" 
@@ -648,7 +748,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
                   {/* Card Content Layout */}
                   <div className="flex-1 flex gap-4 items-stretch overflow-hidden relative z-20">
                     {/* Left side: Client profile photo inside exact frame */}
-                    <div className="w-30 h-30 aspect-[3/4] bg-slate-100 border-2 border-dashed border-slate-300 rounded-xl overflow-hidden flex flex-col items-center justify-center relative shrink-0">
+                    <div className="w-20 sm:w-30 h-20 sm:h-30 aspect-[3/4] bg-slate-100 border-2 border-dashed border-slate-300 rounded-xl overflow-hidden flex flex-col items-center justify-center relative shrink-0">
                       {clientInfo.photoUrl ? (
                         <img
                           src={clientInfo.photoUrl}
@@ -667,50 +767,50 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
                     </div>
 
                     {/* Right side: Field values with actual arrows prefixed: ▶ */}
-                    <div className="flex-1 flex flex-col justify-around text-slate-800 text-[11px] font-bold py-1 min-w-0  p-2.5 rounded-xl ">
+                    <div className="flex-1 flex flex-col justify-around text-slate-800 text-[9px] sm:text-[11px] font-bold py-1 min-w-0 p-1 sm:p-2.5 rounded-xl">
                       <div className="flex items-center gap-1.5 truncate">
-                        <span className="text-[15px] uppercase tracking-wider font-mono text-slate-500 w-24 shrink-0">
+                        <span className="text-[9px] sm:text-[15px] uppercase tracking-wider font-mono text-slate-500 w-16 sm:w-24 shrink-0">
                           LAST NAME
                         </span>
                         <div className="flex items-center gap-1 truncate text-slate-950 font-black">
                           <span className="text-blue-600">▶</span>
-                          <span className="uppercase text-xs tracking-wide text-[15px]">
+                          <span className="uppercase text-[10px] sm:text-[15px] tracking-wide">
                             {clientInfo.lastName}
                           </span>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-1.5 truncate">
-                        <span className="text-[15px] uppercase tracking-wider font-mono text-slate-500 w-24 shrink-0">
+                        <span className="text-[9px] sm:text-[15px] uppercase tracking-wider font-mono text-slate-500 w-16 sm:w-24 shrink-0">
                           FIRST NAME
                         </span>
                         <div className="flex items-center gap-1 truncate text-slate-950 font-black">
                           <span className="text-blue-600">▶</span>
-                          <span className="uppercase text-xs tracking-wide text-[15px]">
+                          <span className="uppercase text-[10px] sm:text-[15px] tracking-wide">
                             {clientInfo.givenName}
                           </span>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-1 truncate">
-                        <span className="text-[15px] uppercase tracking-wider font-mono text-slate-500 w-24 shrink-0">
+                        <span className="text-[9px] sm:text-[15px] uppercase tracking-wider font-mono text-slate-500 w-16 sm:w-24 shrink-0">
                           MIDDLE NAME
                         </span>
                         <div className="flex items-center gap-1.5 truncate text-slate-950 font-black">
                           <span className="text-blue-600">▶</span>
-                          <span className="uppercase text-xs tracking-wide text-[15px]">
+                          <span className="uppercase text-[10px] sm:text-[15px] tracking-wide">
                             {clientInfo.middleName || "N/A"}
                           </span>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-1.5 truncate">
-                        <span className="text-[15px] uppercase tracking-wider font-mono text-slate-500 w-24 shrink-0">
+                        <span className="text-[9px] sm:text-[15px] uppercase tracking-wider font-mono text-slate-500 w-16 sm:w-24 shrink-0">
                           BIRTHDAY
                         </span>
                         <div className="flex items-center gap-1 text-slate-950 font-bold">
                           <span className="text-blue-600">▶</span>
-                          <span className="uppercase text-xs tracking-wide text-[15px]">
+                          <span className="uppercase text-[10px] sm:text-[15px] tracking-wide">
                             {clientInfo.birthday || "YYYY-MM-DD"}
                           </span>
                         </div>
@@ -718,14 +818,14 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
 
                       <div className="flex items-center gap-1.5 truncate">
                        <div className="flex flex-col">
-                          <span className="text-[15px] uppercase tracking-wider font-mono text-slate-500">
+                          <span className="text-[9px] sm:text-[15px] uppercase tracking-wider font-mono text-slate-500">
                             ADDRESS 
                           </span>
 
                           <div className="flex items-center gap-1 text-slate-950 font-medium">
                             <span className="text-blue-600">▶</span>
 
-                            <span className="uppercase tracking-wide text-[15px]">
+                            <span className="uppercase tracking-wide text-[10px] sm:text-[15px]">
                               {clientInfo.address || "cagayan valley, region ii"}
                             </span>
                           </div>
@@ -760,7 +860,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
               <form onSubmit={handleProfileSave} className="space-y-6">
                 <fieldset disabled className="space-y-6">
                 {/* 1. Group Card personal information */}
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
+                <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-gray-200">
                   <h3 className="text-sm font-black text-blue-900 tracking-wider uppercase border-b border-slate-100 pb-2 mb-4">
                     Personal Information
                   </h3>
@@ -987,7 +1087,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
                 </div>
 
                 {/* 2. Group Card Emergency contact */}
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
+                <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-gray-200">
                   <h3 className="text-sm font-black text-blue-900 tracking-wider uppercase border-b border-slate-100 pb-2 mb-4">
                     Emergency Contact
                   </h3>
@@ -1053,7 +1153,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
           {activeTab === "reservation" && (
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
               {/* Left pane: High-fidelity Room Reservation form matching screenshot */}
-              <div className="xl:col-span-1 bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
+              <div className="xl:col-span-1 bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-gray-200">
                 {/* Header visual */}
                 <div
                   className={`flex items-center justify-between border-b pb-3 mb-4 select-none ${
@@ -1111,7 +1211,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
                 )}
 
                 {/* Calendar element container */}
-                <div className="bg-slate-50/50 p-4 rounded-xl border border-blue-50/50 mb-5 text-center">
+                <div className="bg-slate-50/50 p-2 sm:p-4 rounded-xl border border-blue-50/50 mb-5 text-center">
                   {/* Calendar controller */}
                   <div className="flex items-center justify-between mb-4">
                     <button
@@ -1145,7 +1245,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
                   </div>
 
                   {/* Days rendering */}
-                  <div className="grid grid-cols-7 gap-1.5 select-none">
+                  <div className="grid grid-cols-7 gap-1 sm:gap-1.5 select-none">
                     {calendarRows.map((day, idx) => {
                       if (day === null) {
                         return <div key={`empty-${idx}`} className="aspect-square" />;
@@ -1182,7 +1282,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
                         return (
                           <div
                             key={`day-${day}`}
-                            className={`aspect-square flex items-center justify-center rounded-lg text-[11px] cursor-not-allowed transition-all ${bgClass}`}
+                            className={`aspect-square flex items-center justify-center rounded-lg text-[10px] sm:text-[11px] cursor-not-allowed transition-all ${bgClass}`}
                             title={title}
                           >
                             {day}
@@ -1195,7 +1295,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
                           type="button"
                           key={`day-${day}`}
                           onClick={() => setResDate(formattedDate)}
-                          className={`aspect-square flex items-center justify-center rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          className={`aspect-square flex items-center justify-center rounded-lg text-[10px] sm:text-xs font-bold transition-all cursor-pointer ${
                             isSelected
                               ? "bg-blue-50 border-2 border-[#1D4ED8] text-[#1D4ED8] scale-105 shadow-inner font-extrabold"
                               : "bg-white border border-slate-200 text-slate-800 hover:bg-blue-50/[0.2] hover:border-blue-200"
@@ -1266,16 +1366,23 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
                       <option value="[Choose Option Below]">
                         [Choose Option Below]
                       </option>
-                      <option value="Discussion Room (BIWAG)">
-                        Discussion Room (BIWAG)
-                      </option>
-                      <option value="Discussion Room (MALANA)">
-                        Discussion Room (MALANA)
-                      </option>
-                      <option value="Conference Room">Conference Room</option>
-                      <option value="Ubag Cinema">Ubag Cinema</option>
-                      <option value="Multimedia Room">Multimedia Room</option>
+                      {roomSettings.map((room) => (
+                        <option key={room.name} value={room.name} disabled={!room.enabled}>
+                          {room.enabled
+                            ? room.name
+                            : `${room.name} — Unavailable: ${room.disabledReason || "Unavailable"}`}
+                        </option>
+                      ))}
                     </select>
+                    {roomSettings.some((room) => !room.enabled) && (
+                      <div className="mt-2 rounded-lg border border-rose-100 bg-rose-50 px-3 py-2 text-[10px] text-rose-700">
+                        <span className="font-black uppercase">Unavailable rooms: </span>
+                        {roomSettings
+                          .filter((room) => !room.enabled)
+                          .map((room) => `${room.name} (${room.disabledReason || "Unavailable"})`)
+                          .join(" · ")}
+                      </div>
+                    )}
                   </div>
 
                   {/* NUMBER OF ATTENDEES (Dropdown if BIWAG/MALANA; free text input otherwise) */}
@@ -1317,29 +1424,31 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
                     )}
                   </div>
 
-                  {/* TIME SLOT OPTION */}
+                  {/* TIME SLOT OPTION — mirrors the admin/superadmin schedule */}
                   <div>
                     <label className="text-[11px] font-bold text-slate-700 block mb-1">
                       Time
                     </label>
                     {usesReservationTimeDropdown(selectedRoom) ? (
-                      <select
-                        value={resSlot}
-                        onChange={(e) => setResSlot(e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-xs font-bold text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        required
-                      >
-                        <option value="">Select Time</option>
-                        {RESERVATION_TIME_OPTIONS.map((slot) => {
-                          const isTaken = isReservationSlotTaken(slot);
-                          return (
-                            <option key={slot} value={slot} disabled={isTaken}>
-                              {slot}
-                              {isTaken ? " - Reserved" : ""}
-                            </option>
-                          );
-                        })}
-                      </select>
+                      <>
+                        <select
+                          value={resSlot}
+                          onChange={(e) => setResSlot(e.target.value)}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-xs font-bold text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          required
+                        >
+                          <option value="">Select Time</option>
+                          {selectedRoomTimeSlots.map((slot) => {
+                            const isTaken = isReservationSlotTaken(slot);
+                            return (
+                              <option key={slot} value={slot} disabled={isTaken}>
+                                {slot}
+                                {isTaken ? " - Reserved" : ""}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </>
                     ) : (
                       <input
                         type="text"
@@ -1410,7 +1519,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
               </div>
 
               {/* Right pane: Client reservation history index updated with Rooms + Attendees */}
-              <div className="xl:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
+              <div className="xl:col-span-2 bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-gray-200">
                 <h2 className="text-sm font-black text-slate-800 uppercase tracking-wider border-b border-slate-100 pb-2 mb-4">
                   My Reservation Request Ledger
                 </h2>
@@ -1439,7 +1548,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
                           </td>
                         </tr>
                       ) : (
-                        myReservations.map((res) => {
+                        paginatedMyReservations.map((res) => {
                           const isApproved = res.status === "APPROVED";
                           return (
                             <tr
@@ -1541,15 +1650,45 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
                   </table>
                 </div>
 
+                <div className="pt-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+                  <span className="font-mono">
+                    Showing {myReservations.length === 0 ? 0 : (reservationPage - 1) * reservationsRowsPerPage + 1}
+                    {" - "}
+                    {Math.min(reservationPage * reservationsRowsPerPage, myReservations.length)}
+                    {" of "}
+                    {myReservations.length} reservations
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setReservationPage((page) => Math.max(1, page - 1))}
+                      disabled={reservationPage === 1}
+                      className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-slate-600 font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100"
+                    >
+                      Previous
+                    </button>
+                    <span className="font-mono font-bold text-slate-700">
+                      Page {reservationPage} / {reservationTotalPages}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setReservationPage((page) => Math.min(reservationTotalPages, page + 1))}
+                      disabled={reservationPage === reservationTotalPages}
+                      className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-slate-600 font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+
                 <div className="bg-blue-50/50 border border-blue-105 p-3.5 rounded-xl text-left mt-5 flex gap-2.5 items-start">
                   <HelpCircle
                     size={16}
                     className="text-blue-600 shrink-0 mt-0.5"
                   />
                   <div className="text-[11px] leading-relaxed text-slate-600 font-medium">
-                    Please bring your physical **CPLRC RFID card** on your
-                    scheduled booking day for rapid electronic verification on
-                    the kiosk simulator. Bookings are approved instantly or
+                    Please bring your physical **CPLRC ACCESS CARD ** on your
+                    scheduled booking day . Bookings are approved instantly or
                     manually indexed by staff.
                   </div>
                 </div>
@@ -1561,7 +1700,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
           {/* TAB: NOTIFICATIONS FEED */}
           {/* ========================================================= */}
           {activeTab === "notifications" && (
-            <div className="max-w-2xl mx-auto bg-white p-6 rounded-2xl shadow-sm border border-gray-200 text-left">
+            <div className="max-w-2xl mx-auto bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-gray-200 text-left">
               <h2 className="text-sm font-black text-slate-800 uppercase tracking-wider border-b border-slate-100 pb-2 mb-4 flex items-center justify-between">
                 <span>Account Notifications</span>
                 <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
@@ -1570,15 +1709,16 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
               </h2>
 
               <div className="space-y-4">
-                {rejectedReservationNotifications.map((reservation) => {
+                {visibleRejectedReservationNotifications.map((reservation) => {
                   const notificationId = getRejectedNotificationId(reservation);
                   const isRead = isNotificationRead(notificationId);
 
                   return (
-                  <button
-                    type="button"
+                  <div
                     key={notificationId}
                     onClick={() => markNotificationAsRead(notificationId)}
+                    role="button"
+                    tabIndex={0}
                     className={`w-full text-left p-4 border-l-4 rounded-r-xl flex items-start gap-3 transition-all ${
                       isRead
                         ? "bg-slate-50 border-slate-200 opacity-75"
@@ -1624,14 +1764,89 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
                         - Staff Desk
                       </span>
                     </div>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        deleteNotification(notificationId);
+                      }}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-100 rounded-md transition-colors"
+                      title="Delete notification"
+                      aria-label="Delete rejected reservation notification"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                  );
+                })}
+
+                {visibleApprovedReservationNotifications.map((reservation) => {
+                  const notificationId = getApprovedNotificationId(reservation);
+                  const isRead = isNotificationRead(notificationId);
+
+                  return (
+                    <div
+                      key={notificationId}
+                      onClick={() => markNotificationAsRead(notificationId)}
+                      role="button"
+                      tabIndex={0}
+                      className={`w-full text-left p-4 border-l-4 rounded-r-xl flex items-start gap-3 transition-all ${
+                        isRead
+                          ? "bg-slate-50 border-slate-200 opacity-75"
+                          : "bg-emerald-50/70 border-emerald-600 hover:bg-emerald-50"
+                      }`}
+                    >
+                      <span
+                        className={`w-2 h-2 rounded-full shrink-0 mt-2 ${
+                          isRead ? "bg-slate-300" : "bg-emerald-500"
+                        }`}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-black text-slate-850">
+                          Reservation Request Approved
+                        </p>
+                        <p className="text-[10.5px] text-slate-600 mt-1 leading-relaxed">
+                          Your reservation for{" "}
+                          <strong className="text-slate-900">
+                            {reservation.room || "CPLRC room"}
+                          </strong>{" "}
+                          on{" "}
+                          <strong className="font-mono text-slate-900">
+                            {reservation.date}
+                          </strong>{" "}
+                          at{" "}
+                          <strong className="font-mono text-slate-900">
+                            {reservation.timeSlot}
+                          </strong>{" "}
+                          has been approved.
+                        </p>
+                        <span className="text-[9px] font-mono text-slate-400 block mt-2">
+                          {reservation.approvedAt
+                            ? new Date(reservation.approvedAt).toLocaleString()
+                            : "Staff Desk"} - Staff Desk
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          deleteNotification(notificationId);
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-emerald-700 hover:bg-emerald-100 rounded-md transition-colors"
+                        title="Delete notification"
+                        aria-label="Delete approved reservation notification"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   );
                 })}
 
                 {/* 1. Account registration notice */}
-                <button
-                  type="button"
+                {!deletedNotificationIds.includes("account-activation") && <div
                   onClick={() => markNotificationAsRead("account-activation")}
+                  role="button"
+                  tabIndex={0}
                   className={`w-full text-left p-4 border-l-4 rounded-r-xl flex items-start gap-3 transition-all ${
                     isNotificationRead("account-activation")
                       ? "bg-slate-50 border-slate-200 opacity-75"
@@ -1662,10 +1877,24 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
                       Just now • System Log
                     </span>
                   </div>
-                </button>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      deleteNotification("account-activation");
+                    }}
+                    className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-100 rounded-md transition-colors"
+                    title="Delete notification"
+                    aria-label="Delete account activation notification"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>}
               </div>
             </div>
           )}
+
+          {activeTab === "e-resources" && <EResources />}
         </div>
       </div>
     </div>

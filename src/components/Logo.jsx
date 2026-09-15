@@ -33,7 +33,7 @@ export const PLRCHeader = () => {
       <PLRCLogo size={72} />
       <div>
         <h1 className="text-xl sm:text-2xl font-bold tracking-tight font-sans text-amber-400">
-          PLRC Digital Logbook
+          CPLRC Digital Logbook
         </h1>
         <p className="text-xs sm:text-sm text-blue-200 uppercase tracking-widest font-mono">
           Provincial Learning and Resource Center • Cagayan

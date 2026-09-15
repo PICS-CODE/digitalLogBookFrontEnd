@@ -31,6 +31,8 @@ import { PLRCLogo, CagayanProvinceSeal } from "./Logo";
 import jsQR from "jsqr";
 import { QRRegistration } from "./QRRegistration";
 import QRCode from "qrcode";
+import Swal from "sweetalert2";
+import { api } from "../services/api";
 
 // Icon helper to render the accurate Lucide icon
 export const ServiceIcon = ({ name, className = "", size = 24 }) => {
@@ -67,8 +69,13 @@ export const RFIDScannerSim = ({
   onRegisterClick,
   initialScanMethod = "RFID",
   onAddQrClient,
+  onQrClientsRefresh,
   initialTerminalLocation = "1F WALK-IN RECEPTION",
   onlyQrMode = false,
+  manualRfidScan = null,
+  manualRfid = "",
+  onManualRfidChange,
+  onManualRfidSubmit,
 }) => {
   const [rfidInput, setRfidInput] = useState("");
   const [scannedUser, setScannedUser] = useState(null);
@@ -105,8 +112,8 @@ export const RFIDScannerSim = ({
 
   // Generate dynamic companion QR registration link
   useEffect(() => {
-    const regUrl = window.location.origin + "/#/client-login";
-    QRCode.toDataURL("REGISTRATION_QR", { // Changed to a fixed string for internal handling
+    const regUrl = window.location.origin + "/#/qr-register";
+    QRCode.toDataURL(regUrl, {
       width: 140,
       margin: 1,
       color: {
@@ -356,7 +363,7 @@ export const RFIDScannerSim = ({
     "2F STUDY & DISCUSSION",
     "3F CO-WORKING ZONE",
     "4F QUIET STUDY HUB",
-    "INTERN AUTO-DECK",
+    "DIGITAL TRANSPORTATION CENTER",
     "PRINTING SECTOR",
   ];
 
@@ -371,7 +378,7 @@ export const RFIDScannerSim = ({
           { id: "qr_4f", name: "4th Floor", icon: "Library", description: "QR entrance assignment for the 4th Floor.", color: "sky" },
         ];
       }
-      const isInternetArea = location === "PRINTING SECTOR";
+      const isInternetArea = location === "INTERNET AREA" || location === "PRINTING SECTOR";
       return [
         {
           id: isInternetArea ? "entrance_auto_enter" : "entrance",
@@ -397,7 +404,7 @@ export const RFIDScannerSim = ({
           },
           {
             id: "wifi",
-            name: "Wi-Fi Voucher",
+            name: "WiFi Voucher",
             icon: "Wifi",
             description: "Access voucher for high-speed internet network.",
             color: "emerald",
@@ -535,7 +542,7 @@ export const RFIDScannerSim = ({
             color: "amber",
           },
         ];
-      case "INTERN AUTO-DECK":
+      case "DIGITAL TRANSPORTATION CENTER":
         return [
           {
             id: "intern_auto",
@@ -550,7 +557,7 @@ export const RFIDScannerSim = ({
         return [
           {
             id: "printing",
-            name: "Printing & Xerox",
+            name: "Printing",
             icon: "Printer",
             description:
               "Authorized printing access. Restricted to 10 pages maximum limit.",
@@ -599,7 +606,7 @@ export const RFIDScannerSim = ({
       .replace(/[\r\n\t]/g, "")
       .replace(/^RFID[:\s-]*/i, "");
 
-  const handleScan = (rfidToScan) => {
+  const handleScan = async (rfidToScan) => {
     const trimmedRfid = normalizeScanCode(rfidToScan);
     if (!trimmedRfid) return;
 
@@ -623,13 +630,27 @@ export const RFIDScannerSim = ({
     }
 
     // Find if user exists
-    const matchedUser = users.find((u) => u.rfid === trimmedRfid) ||
-                        (qrClients && qrClients.find((q) => q.rfid === trimmedRfid));
+    let matchedUser = users.find((u) => u.rfid === trimmedRfid) ||
+                      (qrClients && qrClients.find((q) => q.rfid === trimmedRfid));
+
+    // Refresh QR registrations so a scanner that was already open can see a
+    // guest pass created from another phone or device.
+    if (!matchedUser && trimmedRfid.startsWith("QR-")) {
+      try {
+        const latestQrClients = await api.qrClients.list();
+        matchedUser = latestQrClients.find((q) => q.rfid === trimmedRfid);
+        if (matchedUser && typeof onQrClientsRefresh === "function") {
+          onQrClientsRefresh(latestQrClients);
+        }
+      } catch (error) {
+        console.warn("Unable to refresh QR registrations before scan.", error);
+      }
+    }
     if (!matchedUser) {
       setErrorMessage(
         onlyQrMode
-          ? `QR Code badge [${trimmedRfid}] is unregistered in the PLRC provincial database. If you are a new guest, please register now.`
-          : `Barcode / RFID access code [${trimmedRfid}] is unregistered inside the database.`,
+          ? `QR Code badge [${trimmedRfid}] is unregistered in the CPLRC provincial database. If you are a new guest, please register now.`
+          : `Access card code [${trimmedRfid}] is unregistered inside the database.`,
       );
       setScannerState("ERROR_MESSAGE");
       return;
@@ -638,29 +659,51 @@ export const RFIDScannerSim = ({
     // User is found!
     setScannedUser(matchedUser);
 
-    // Special automatic check-in for Intern Auto-Deck and CPLRC SUB
-    if (terminalLocation === "INTERN AUTO-DECK" || terminalLocation === "CPLRC SUB") {
+    // CPLRC SUB creates its entrance record first, then stays on the active
+    // resource assignment workflow so additional resources can be selected.
+    if (terminalLocation === "CPLRC SUB") {
       const checkInTime = new Date().toISOString();
-      const isInternDeck = terminalLocation === "INTERN AUTO-DECK";
+      const session = {
+        id: `log-auto-${Date.now()}`,
+        rfid: matchedUser.rfid,
+        userFullName: `${matchedUser.givenName} ${matchedUser.middleName ? matchedUser.middleName + " " : ""}${matchedUser.lastName}`,
+        patronType: matchedUser.patronType,
+        services: ["Entrance"],
+        terminalLocation,
+        entryType: onlyQrMode ? "QR_CODE_ENTRANCE" : "RFID_CHECK_IN",
+        checkInTime,
+        status: "ACTIVE",
+      };
+      onAddLog(session);
+      setActiveSession(session);
+      setActiveSessions([session]);
+      setSelectedServices(["Entrance"]);
+      setScannerState("SCANNED");
+      playScanBeep();
+      return;
+    }
+
+    // Intern Auto-Deck remains an automatic check-in terminal.
+    if (terminalLocation === "DIGITAL TRANSPORTATION CENTER") {
+      const checkInTime = new Date().toISOString();
 
       onAddLog({
         id: `log-auto-${Date.now()}`,
         rfid: matchedUser.rfid,
         userFullName: `${matchedUser.givenName} ${matchedUser.middleName ? matchedUser.middleName + " " : ""}${matchedUser.lastName}`,
         patronType: matchedUser.patronType,
-        services: [isInternDeck ? "Intern Auto Log" : "Entrance"],
+        services: ["Intern Auto Log"],
         terminalLocation,
         entryType: onlyQrMode ? "QR_CODE_ENTRANCE" : "RFID_CHECK_IN",
         checkInTime,
         status: "ACTIVE",
       });
       setSuccessInfo({
-        title: isInternDeck ? "INTERN LOG-IN SUCCESSFUL!" : "CPLRC SUB ENTRY LOGGED!",
+        title: "INTERN LOG-IN SUCCESSFUL!",
         subtitle: `Welcome, ${matchedUser.givenName}! Your entry has been recorded successfully.`,
         type: "in",
       });
       setScannerState("SUCCESS_MESSAGE");
-      playScanBeep();
       return; // End the function here for auto-check-in terminals
     }
 
@@ -706,6 +749,12 @@ export const RFIDScannerSim = ({
   useEffect(() => {
     latestHandleScanRef.current = handleScan;
   });
+
+  // Lets the RFID field in the kiosk header use the same scan workflow as a card reader.
+  useEffect(() => {
+    if (!manualRfidScan?.code || onlyQrMode) return;
+    handleScan(manualRfidScan.code);
+  }, [manualRfidScan, onlyQrMode]);
 
   const submitHardwareScan = (rawCode) => {
     const normalizedCode = normalizeScanCode(rawCode);
@@ -782,12 +831,34 @@ export const RFIDScannerSim = ({
   const toggleService = (serviceName) => {
     if (selectedServices.includes(serviceName)) {
       setSelectedServices(selectedServices.filter((s) => s !== serviceName));
-    } else {
-      setSelectedServices([...selectedServices, serviceName]);
+      return;
     }
+
+    setSelectedServices([...selectedServices, serviceName]);
+
+    // Every newly selected resource gets its own Admin-visible assignment log.
+    if (!scannedUser || !activeSession) return;
+    const activeResourceAlreadyLogged = [activeSession, ...activeSessions].some(
+      (session) => (session.services || []).includes(serviceName),
+    );
+    if (activeResourceAlreadyLogged) return;
+
+    const checkInTime = new Date().toISOString();
+    onAddLog({
+      id: `service-update-${Date.now()}-${serviceName.replace(/\W+/g, "-")}`,
+      groupId: activeSession.groupId || activeSession.id,
+      rfid: scannedUser.rfid,
+      userFullName: `${scannedUser.givenName} ${scannedUser.middleName ? `${scannedUser.middleName} ` : ""}${scannedUser.lastName}`,
+      patronType: scannedUser.patronType,
+      services: [serviceName],
+      terminalLocation,
+      entryType: "SERVICE_UPDATE",
+      checkInTime,
+      status: "ACTIVE",
+    });
   };
 
-  const handleCheckIn = (locationOverride, servicesOverride) => {
+  const handleCheckIn = async (locationOverride, servicesOverride) => {
     if (!scannedUser) return;
 
     const location = locationOverride || terminalLocation;
@@ -813,6 +884,7 @@ export const RFIDScannerSim = ({
         ...recentQrLog,
         services: services,
         terminalLocation: location,
+        qrEntranceArea: location,
       });
       setSuccessInfo({
         title: "DESTINATION UPDATED!",
@@ -826,8 +898,8 @@ export const RFIDScannerSim = ({
     const todayUsage = getTodayUsage(scannedUser.rfid);
 
     // 1. WiFi Voucher Strict Daily Limit Check
-    const selectsWifi = selectedServices.some(
-      (s) => // Note: This part of the logic uses state `selectedServices`, not the `services` param. This is a pre-existing condition.
+    const selectsWifi = services.some(
+      (s) =>
         s.toLowerCase().includes("wifi") || s.toLowerCase().includes("voucher"),
     );
     if (selectsWifi && todayUsage.wifiAvailedCount > 0) {
@@ -857,23 +929,37 @@ export const RFIDScannerSim = ({
       }
     }
 
+    const destinationServices = new Set(["1st Floor", "Entrance", "Entrance (Auto Enter)"]);
     const duplicateServices = services.filter((serviceName) => {
       return logs.some((log) => {
         if (log.rfid !== scannedUser.rfid) return false;
         if (log.entryType === "SERVICE_UPDATE") return false;
         if (!isWithinQuotaWindow(log.checkInTime)) return false;
-        return log.services.includes(serviceName);
+        if (!log.services.includes(serviceName)) return false;
+
+        // QR floor selections are separate destinations. The same generic
+        // entrance label is valid when the guest chooses another floor.
+        if (onlyQrMode && destinationServices.has(serviceName)) {
+          return (log.qrEntranceArea || log.terminalLocation) === location;
+        }
+
+        return true;
       });
     });
 
     if (duplicateServices.length > 0) {
-      const confirmProceed = window.confirm(
-        `🚨 System Alert: Same RFID detected on same service within the last 15 hours!\n\n` +
-          `Patron (${scannedUser.givenName} ${scannedUser.lastName}) has already used/logged service(s) within the last 15 hours:\n` +
-          `• ${duplicateServices.join("\n• ")}\n\n` +
-          `Would you like to authorize this duplicate scan stay anyway?`,
-      );
-      if (!confirmProceed) {
+      const result = await Swal.fire({
+        title: "Duplicate service scan",
+        text: `Patron ${scannedUser.givenName} ${scannedUser.lastName} already used: ${duplicateServices.join(", ")}. Authorize another scan?`,
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "Authorize scan",
+        cancelButtonText: "Cancel",
+        confirmButtonColor: "#1d4ed8",
+        cancelButtonColor: "#64748b",
+        reverseButtons: true,
+      });
+      if (!result.isConfirmed) {
         return;
       }
     }
@@ -888,7 +974,8 @@ export const RFIDScannerSim = ({
         userFullName: `${scannedUser.givenName} ${scannedUser.middleName ? scannedUser.middleName + " " : ""}${scannedUser.lastName}`,
         patronType: scannedUser.patronType,
         services: [serviceName], // Use the iterated serviceName
-        terminalLocation,
+        terminalLocation: location,
+        qrEntranceArea: onlyQrMode ? location : undefined,
         entryType: onlyQrMode ? "QR_CODE_ENTRANCE" : "RFID_CHECK_IN",
         checkInTime,
         status: "ACTIVE",
@@ -899,7 +986,7 @@ export const RFIDScannerSim = ({
     });
     setSuccessInfo({
       title: "CHECK-IN PROCESSED!",
-      subtitle: `Welcome back to CPLRC, ${scannedUser.givenName}! Access keys configured in [${terminalLocation}].`,
+      subtitle: `Welcome back to CPLRC, ${scannedUser.givenName}! Access keys configured in [${location}].`,
       type: "in",
     });
     setScannerState("SUCCESS_MESSAGE");
@@ -920,13 +1007,13 @@ export const RFIDScannerSim = ({
     });
     setSuccessInfo({
       title: "CHECKOUT PROCESSED!",
-      subtitle: `Logging departure for ${scannedUser.givenName}. Thank you for visiting PLRC Cagayan!`,
+      subtitle: `Logging departure for ${scannedUser.givenName}. Thank you for visiting CPLRC Cagayan!`,
       type: "out",
     });
     setScannerState("SUCCESS_MESSAGE");
   };
 
-  const handleUpdateServices = () => {
+  const handleUpdateServices = async () => {
     if (!scannedUser || !activeSession) return;
     if (selectedServices.length === 0) {
       alert(
@@ -1003,13 +1090,18 @@ export const RFIDScannerSim = ({
     });
 
     if (duplicateServices.length > 0) {
-      const confirmProceed = window.confirm(
-        `🚨 System Alert: Same RFID detected on same service within the last 15 hours!\n\n` +
-          `Patron (${scannedUser.givenName} ${scannedUser.lastName}) has already used/logged service(s) within the last 15 hours:\n` +
-          `• ${duplicateServices.join("\n• ")}\n\n` +
-          `Would you like to authorize this duplicate scan stay anyway?`,
-      );
-      if (!confirmProceed) {
+      const result = await Swal.fire({
+        title: "Duplicate service scan",
+        text: `Patron ${scannedUser.givenName} ${scannedUser.lastName} already used: ${duplicateServices.join(", ")}. Authorize another scan?`,
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "Authorize scan",
+        cancelButtonText: "Cancel",
+        confirmButtonColor: "#1d4ed8",
+        cancelButtonColor: "#64748b",
+        reverseButtons: true,
+      });
+      if (!result.isConfirmed) {
         return;
       }
     }
@@ -1349,6 +1441,31 @@ export const RFIDScannerSim = ({
                     present their {onlyQrMode ? "digital or printed QR Code" : "physical RFID membership card"} to scan in or
                     out. {onlyQrMode && "New users must register at the Staff Desk."}
                   </p>
+
+                  {!onlyQrMode && (
+                    <form
+                      className="flex w-full gap-2"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        onManualRfidSubmit?.();
+                      }}
+                    >
+                      <input
+                        type="text"
+                        value={manualRfid}
+                        onChange={(event) => onManualRfidChange?.(event.target.value)}
+                        placeholder="Type RFID number"
+                        aria-label="Type RFID number manually"
+                        className="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-amber-300 placeholder:text-slate-500 outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400"
+                      />
+                      <button
+                        type="submit"
+                        className="rounded-md bg-sky-500 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-slate-950 transition-colors hover:bg-sky-400"
+                      >
+                        Scan
+                      </button>
+                    </form>
+                  )}
 
                   {onlyQrMode && (
                     /* QUICK SMARTPHONE REGISTRATION COMPANION QR CARD */
@@ -1762,9 +1879,17 @@ export const RFIDScannerSim = ({
                               id: "internet",
                               label: "Internet Area",
                               desc: "PC Terminals & Printing Hub",
-                              location: "PRINTING SECTOR",
+                              location: "INTERNET AREA",
                               defaultServiceId: "entrance_auto_enter",
                               defaultServiceName: "Entrance (Auto Enter)",
+                            },
+                            {
+                              id: "wifi-voucher",
+                              label: "Wi-Fi Voucher",
+                              desc: "One voucher per guest within the quota period.",
+                              location: "PRINTING SECTOR",
+                              defaultServiceId: "wifi",
+                              defaultServiceName: "Wi-Fi Voucher",
                             },
                             {
                               id: "cplrc-sub",
@@ -1955,7 +2080,7 @@ export const RFIDScannerSim = ({
                       {/* Control check-in buttons */}
                       <div className="space-y-1.5 pt-2 border-t border-slate-800">
                         <button
-                          onClick={handleCheckIn}
+                          onClick={() => handleCheckIn()}
                           disabled={selectedServices.length === 0}
                           className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 py-2 rounded text-xs font-black uppercase tracking-wider transition-all cursor-pointer text-center"
                         >
@@ -2146,13 +2271,13 @@ export const RFIDScannerSim = ({
                   tabIndex={-1}
                 />
                 <p className="text-[9.5px] text-slate-400 leading-normal">
-                  Connect your USB barcode scanner, keep this scanner page open, then scan the member card. The scanner sends the code automatically; Enter or Tab will submit it.
+                  💡 Simulate physical card wave actions by tapping any registered test user database key below or manually inputting credit card RFID code strings.
                 </p>
 
                 {/* Database quick swipe selectors */}
                 <div>
                   <span className="text-[8px] font-mono font-bold text-slate-500 uppercase block mb-1.5">
-                    Registered barcode / RFID codes:
+                    Registered test members database keys:
                   </span>
                   <div className="grid grid-cols-1 gap-1 max-h-[140px] overflow-y-auto pr-1">
                     {users.map((u) => {
@@ -2223,7 +2348,7 @@ export const RFIDScannerSim = ({
                 {/* Manual numeric swiper trigger */}
                 <div className="border-t border-slate-800/80 pt-2.5">
                   <span className="text-[8px] font-mono font-bold text-slate-500 uppercase block mb-1">
-                    Manual barcode / access code:
+                    Manual Access Code simulation:
                   </span>
                   <div className="flex gap-1.5">
                     <div className="relative flex-1">
@@ -2233,7 +2358,7 @@ export const RFIDScannerSim = ({
                       />
                       <input
                         type="text"
-                        placeholder="Scan or type membership barcode"
+                        placeholder="10-digit decimal RFID code"
                         className="pl-5 pr-1 py-1 w-full text-[10px] border border-slate-800 bg-slate-950 rounded text-amber-400 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-amber-400 font-mono"
                         value={rfidInput}
                         onChange={(e) =>
@@ -2248,7 +2373,7 @@ export const RFIDScannerSim = ({
                       onClick={() => handleScan(rfidInput)}
                       className="px-2.5 bg-sky-500 hover:bg-sky-600 text-slate-950 text-[9px] font-black rounded uppercase tracking-wider transition-all cursor-pointer"
                     >
-                      SUBMIT CODE
+                      SWIPE CARD
                     </button>
                   </div>
                 </div>
@@ -2424,17 +2549,17 @@ export const RFIDScannerSim = ({
 
       {/* QR Registration Modal */}
       {showQrRegistrationModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 z-50 overflow-hidden">
-          <div className="bg-slate-900 rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden my-8 animate-in fade-in zoom-in-95 duration-200 border border-slate-800">
-            <div className="bg-cyan-600/20 px-6 py-4 flex justify-between items-center text-white border-b border-cyan-500/20">
-              <h1 className="text-xl font-extrabold tracking-tight select-none text-cyan-300">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-stretch sm:items-center justify-center p-0 sm:p-4 z-50 overflow-hidden">
+          <div className="bg-slate-900 rounded-none sm:rounded-2xl shadow-2xl max-w-2xl w-full max-h-[100dvh] sm:max-h-[90vh] overflow-hidden my-0 sm:my-8 animate-in fade-in zoom-in-95 duration-200 border border-slate-800 flex flex-col">
+            <div className="bg-cyan-600/20 px-4 sm:px-6 py-3 sm:py-4 flex justify-between items-center gap-3 text-white border-b border-cyan-500/20 shrink-0">
+              <h1 className="text-base sm:text-xl leading-tight font-extrabold tracking-tight select-none text-cyan-300">
                 Guest QR Pass Registration
               </h1>
               <button onClick={() => setShowQrRegistrationModal(false)} className="text-white/80 hover:text-white hover:bg-white/10 p-1.5 rounded-full transition-all">
                 <X size={20} className="stroke-[2.5]" />
               </button>
             </div>
-            <div className="max-h-[60vh] sm:max-h-[75vh] overflow-y-auto">
+            <div className="min-h-0 overflow-y-auto">
               <QRRegistration onAddQrClient={onAddQrClient} onBackToScanner={() => setShowQrRegistrationModal(false)} />
             </div>
           </div>
