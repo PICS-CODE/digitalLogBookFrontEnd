@@ -828,7 +828,7 @@ export const RFIDScannerSim = ({
     };
   }, [onlyQrMode, scanMethod]);
 
-  const toggleService = (serviceName) => {
+  const toggleService = async (serviceName) => {
     if (selectedServices.includes(serviceName)) {
       setSelectedServices(selectedServices.filter((s) => s !== serviceName));
       return;
@@ -844,7 +844,8 @@ export const RFIDScannerSim = ({
     if (activeResourceAlreadyLogged) return;
 
     const checkInTime = new Date().toISOString();
-    onAddLog({
+    try {
+      await onAddLog({
       id: `service-update-${Date.now()}-${serviceName.replace(/\W+/g, "-")}`,
       groupId: activeSession.groupId || activeSession.id,
       rfid: scannedUser.rfid,
@@ -855,7 +856,10 @@ export const RFIDScannerSim = ({
       entryType: "SERVICE_UPDATE",
       checkInTime,
       status: "ACTIVE",
-    });
+      });
+    } catch (_) {
+      setSelectedServices((current) => current.filter((service) => service !== serviceName));
+    }
   };
 
   const handleCheckIn = async (locationOverride, servicesOverride) => {
@@ -880,12 +884,16 @@ export const RFIDScannerSim = ({
     );
 
     if (onlyQrMode && recentQrLog) {
-      onUpdateLog({
+      try {
+        await onUpdateLog({
         ...recentQrLog,
         services: services,
         terminalLocation: location,
         qrEntranceArea: location,
-      });
+        });
+      } catch (_) {
+        return;
+      }
       setSuccessInfo({
         title: "DESTINATION UPDATED!",
         subtitle: `Your destination has been changed to [${location}].`,
@@ -966,8 +974,8 @@ export const RFIDScannerSim = ({
 
     const checkInTime = new Date().toISOString();
     const logGroupId = `log-group-${Date.now()}`;
-    services.forEach((serviceName, index) => {
-      onAddLog({
+    try {
+      await Promise.all(services.map((serviceName, index) => onAddLog({
         id: `${logGroupId}-${index}`,
         groupId: logGroupId,
         rfid: scannedUser.rfid,
@@ -982,8 +990,11 @@ export const RFIDScannerSim = ({
         pagesPrinted: serviceName.toLowerCase().includes("printing")
           ? pagesToPrint
           : undefined,
-      });
-    });
+      })));
+    } catch (_) {
+      setErrorMessage("The visit was not saved. Please check the API connection and try again.");
+      return;
+    }
     setSuccessInfo({
       title: "CHECK-IN PROCESSED!",
       subtitle: `Welcome back to CPLRC, ${scannedUser.givenName}! Access keys configured in [${location}].`,

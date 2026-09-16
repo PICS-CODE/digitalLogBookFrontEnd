@@ -273,6 +273,7 @@ export default function App() {
     try {
       const saved = await api.qrClients.create(newClient);
       setQrClients((current) => [saved, ...current]);
+      return saved;
     } catch (error) {
       alert(`Unable to save QR registration: ${error.message}`);
       throw error;
@@ -318,7 +319,11 @@ export default function App() {
       localStorage.setItem("plrc_logs", JSON.stringify(updated));
       return updated;
     });
-    } catch (error) { alert(`Unable to save visit log: ${error.message}`); }
+      return saved;
+    } catch (error) {
+      alert(`Unable to save visit log: ${error.message}`);
+      throw error;
+    }
   };
 
   const handleUpdateLog = async (updatedLog) => {
@@ -331,7 +336,11 @@ export default function App() {
       localStorage.setItem("plrc_logs", JSON.stringify(updated));
       return updated;
     });
-    } catch (error) { alert(`Unable to update visit log: ${error.message}`); }
+      return saved;
+    } catch (error) {
+      alert(`Unable to update visit log: ${error.message}`);
+      throw error;
+    }
   };
 
   const handleClearLogs = async () => {

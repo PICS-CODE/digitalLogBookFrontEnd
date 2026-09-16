@@ -122,7 +122,7 @@ export const QRRegistration = ({ onAddQrClient, onBackToScanner }) => {
       setSuccessClient(newQrClient);
     } catch (err) {
       console.error(err);
-      setErrorMsg("Temporary system error creating your security QR badge descriptor.");
+      setErrorMsg(err.message || "Unable to save the QR registration.");
     }
   };
 
