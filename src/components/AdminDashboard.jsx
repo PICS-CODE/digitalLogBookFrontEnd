@@ -725,6 +725,7 @@ export const AdminDashboard = ({
     emergencyPhone: "",
     photoUrl: "",
   });
+  const [isSubmittingUser, setIsSubmittingUser] = useState(false);
 
   const fileInputRef = useRef(null);
 
@@ -828,6 +829,7 @@ export const AdminDashboard = ({
   // Submit new user
   const handleFormSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmittingUser) return;
     if (!formData.rfid) {
       alert("RFID is required!");
       return;
@@ -896,18 +898,23 @@ export const AdminDashboard = ({
         createdAt: new Date().toISOString(),
       };
 
-      const savedUser = await onAddUser(newUser);
-      if (!savedUser) return;
+      setIsSubmittingUser(true);
+      try {
+        const savedUser = await onAddUser(newUser);
+        if (!savedUser) return;
 
-      await Swal.fire({
-        icon: "success",
-        title: "Client Registered",
-        text: savedUser.email
-          ? "The account was created and the registration email was triggered."
-          : "The client account was created successfully.",
-        confirmButtonText: "OK",
-        confirmButtonColor: "#2563eb",
-      });
+        await Swal.fire({
+          icon: "success",
+          title: "Client Registered",
+          text: savedUser.email
+            ? "The account was created and the registration email was queued."
+            : "The client account was created successfully.",
+          confirmButtonText: "OK",
+          confirmButtonColor: "#2563eb",
+        });
+      } finally {
+        setIsSubmittingUser(false);
+      }
     }
 
     // Reset Form
@@ -4152,7 +4159,7 @@ export const AdminDashboard = ({
                   </div>
                 </div>
                 <div className="w-full sm:w-auto self-end">
-                  <button type="submit" className="w-full sm:w-auto px-8 py-3 bg-blue-700 hover:bg-blue-800 active:bg-blue-900 text-white font-bold text-xs rounded-lg shadow-md hover:shadow-lg transition-all uppercase tracking-widest border border-blue-800 cursor-pointer">Save Changes</button>
+                  <button type="submit" disabled={isSubmittingUser} className="w-full sm:w-auto px-8 py-3 bg-blue-700 hover:bg-blue-800 active:bg-blue-900 text-white font-bold text-xs rounded-lg shadow-md hover:shadow-lg transition-all uppercase tracking-widest border border-blue-800 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed">{isSubmittingUser ? "Saving..." : "Save Changes"}</button>
                 </div>
               </div>
             </form>
