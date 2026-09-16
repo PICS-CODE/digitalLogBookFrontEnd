@@ -826,7 +826,7 @@ export const AdminDashboard = ({
   };
 
   // Submit new user
-  const handleFormSubmit = (e) => {
+  const handleFormSubmit = async (e) => {
     e.preventDefault();
     if (!formData.rfid) {
       alert("RFID is required!");
@@ -896,7 +896,18 @@ export const AdminDashboard = ({
         createdAt: new Date().toISOString(),
       };
 
-      onAddUser(newUser);
+      const savedUser = await onAddUser(newUser);
+      if (!savedUser) return;
+
+      await Swal.fire({
+        icon: "success",
+        title: "Client Registered",
+        text: savedUser.email
+          ? "The account was created and the registration email was triggered."
+          : "The client account was created successfully.",
+        confirmButtonText: "OK",
+        confirmButtonColor: "#2563eb",
+      });
     }
 
     // Reset Form

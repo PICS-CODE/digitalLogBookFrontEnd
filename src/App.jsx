@@ -290,9 +290,10 @@ export default function App() {
   const handleAddUser = async (newUser) => {
     let savedUser;
     try { savedUser = await api.users.create(newUser); }
-    catch (error) { alert(`Unable to create member: ${error.message}`); return; }
+    catch (error) { alert(`Unable to create member: ${error.message}`); return null; }
     const updated = [savedUser, ...users];
     saveUsers(updated);
+    return savedUser;
   };
 
   const handleDeleteUser = async (userId) => {
