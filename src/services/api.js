@@ -1,6 +1,9 @@
 const apiHost = typeof window !== "undefined" ? window.location.hostname : "localhost";
 const apiProtocol = typeof window !== "undefined" ? window.location.protocol : "http:";
-const baseUrl = import.meta.env.VITE_API_URL || `${apiProtocol}//${apiHost}:5001/api`;
+const defaultBaseUrl = apiHost === "digital-log-book-front-end.vercel.app"
+  ? "https://digital-logbook-backend-l8es.onrender.com/api"
+  : `${apiProtocol}//${apiHost}:5001/api`;
+const baseUrl = import.meta.env.VITE_API_URL || defaultBaseUrl;
 
 async function request(path, options = {}) {
   const response = await fetch(`${baseUrl}${path}`, {
@@ -9,7 +12,11 @@ async function request(path, options = {}) {
   });
   if (response.status === 204) return null;
   const body = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(body?.message || `Request failed (${response.status}).`);
+  if (!response.ok) {
+    const error = new Error(body?.message || `Request failed (${response.status}).`);
+    error.status = response.status;
+    throw error;
+  }
   return body;
 }
 

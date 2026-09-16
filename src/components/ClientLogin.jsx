@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from "react";
+import { api } from "../services/api";
 import { PLRCLogo } from "./Logo";
 import loginBackground from "/images/background.jpg";
 import {
@@ -32,7 +33,7 @@ export const ClientLogin = ({
   const [loginError, setLoginError] = useState("");
 
   // Handle Login submission
-  const handleLoginSubmit = (e) => {
+  const handleLoginSubmit = async (e) => {
     e.preventDefault();
     setLoginError("");
 
@@ -44,38 +45,30 @@ export const ClientLogin = ({
       return;
     }
 
-    // Robust lookup by RFID, Username, or Email
-    const found = users.find(
-      (u) =>
-        u.rfid.toLowerCase() === cleanUsername ||
-        (u.email && u.email.toLowerCase() === cleanUsername) ||
-        (u.id && u.id.toLowerCase() === cleanUsername) ||
-        (cleanUsername === "superadmin" && u.rfid === "0000004513") // Backward compatibility
-    );
-
-    if (!found) {
-      setLoginError(
-        "Member credentials unrecognized. Please contact the Library Staff.",
-      );
-      return;
-    }
-
-    if (!allowedRoles.includes(found.role)) {
-      setLoginError(
-        isAdminPortal
-          ? "This account is a client account. Please sign in through the Client Portal."
-          : "This account is a staff account. Please sign in through the Staff Admin Portal.",
-      );
-      return;
-    }
-
-    const validPassword = found.password || "password123";
-    if (validPassword === cleanPassword || (found.role === "superadmin" && cleanPassword === "••••••••••")) {
-      onLoginSuccess(found);
-    } else {
-      setLoginError(
-        "Incorrect password credentials. Please verify your portal details.",
-      );
+    try {
+      const foundUser = await api.login(cleanUsername, cleanPassword, portal);
+      if (!allowedRoles.includes(foundUser.role)) {
+        setLoginError(
+          isAdminPortal
+            ? "This account is a client account. Please sign in through the Client Portal."
+            : "This account is a staff account. Please sign in through the Staff Admin Portal.",
+        );
+        return;
+      }
+      setPassword("");
+      onLoginSuccess(foundUser);
+    } catch (error) {
+      if (error.status === 400 || error.status === 401) {
+        setLoginError("Invalid username or password. Please verify your portal details.");
+      } else if (error.status === 403) {
+        setLoginError(
+          isAdminPortal
+            ? "This account is a client account. Please sign in through the Client Portal."
+            : "This account is a staff account. Please sign in through the Staff Admin Portal.",
+        );
+      } else {
+        setLoginError("Unable to connect to the login service. Please try again later.");
+      }
     }
   };
 
