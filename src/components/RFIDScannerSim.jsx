@@ -1223,7 +1223,7 @@ export const RFIDScannerSim = ({
             <div className="relative w-full max-w-[620px] aspect-[1.58/1] bg-slate-50 rounded-2xl shadow-2xl border border-slate-300 overflow-hidden flex flex-col p-4 sm:p-5 select-none text-slate-900 hover:shadow-cyan-400/5 hover:border-slate-400 transition-all duration-300">
             {/* ID Background Image */}
             <img 
-              src="img/id.png" 
+              src="/images/id-card.png" 
               alt="" 
               className="absolute inset-0 w-full h-full object-cover pointer-events-none"
             />

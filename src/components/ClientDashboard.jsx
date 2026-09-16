@@ -701,7 +701,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
                 <div className="relative w-full max-w-[580px] aspect-[1.58/1] bg-white rounded-2xl shadow-xl border border-slate-300/80 overflow-hidden flex flex-col p-2 sm:p-4 select-none text-slate-900 transition-transform duration-300 hover:scale-[1.01]">
                   {/* ID Background Image */}
                   <img 
-                    src="img/id.png" 
+                    src="/images/id-card.png" 
                     alt="" 
                     className="absolute inset-0 w-full h-full object-cover pointer-events-none "
                   />
@@ -717,7 +717,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
                   <div className="flex items-center justify-between border-b border-blue-100 pb-2 mb-2 bg-transparent relative z-20">
                     <div className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center bg-blue-50 scale-90 border border-slate-100">
                       <img
-                        src="img/pgc.png"
+                        src="/images/cplr.png"
                         alt="Seal"
                         className="w-full h-full object-contain"
                       />

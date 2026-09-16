@@ -239,7 +239,7 @@ export const QRRegistration = ({ onAddQrClient, onBackToScanner }) => {
           <div className="bg-white text-slate-950 p-3 sm:p-4 rounded-2xl w-full max-w-[320px] mx-auto shadow-2xl border border-slate-200 relative select-text text-left animate-in fade-in slide-in-from-bottom-4 duration-500">
             {/* ID Background Image */}
             <img 
-              src="img/id.png" 
+              src="/images/id-card.png" 
               className="absolute inset-0 w-full h-full object-cover pointer-events-none rounded-2xl"
             />
             <div className="relative z-10">

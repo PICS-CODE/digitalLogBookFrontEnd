@@ -8,7 +8,7 @@ import React from "react";
 export const PLRCLogo = ({ className = "", size = 120 }) => {
   return (
     <img
-      src="img/logopng.png"
+      src="/images/logo.png"
       alt="CPLRC Logo"
       className={`object-contain drop-shadow-md select-none ${className}`}
       style={{ width: size, height: size }}
@@ -19,7 +19,7 @@ export const PLRCLogo = ({ className = "", size = 120 }) => {
 export const CagayanProvinceSeal = ({ className = "", size = 120 }) => {
   return (
     <img
-      src="img/pgc.png"
+      src="/images/cplr.png"
       alt="Cagayan Province Seal"
       className={`object-contain drop-shadow-md select-none ${className}`}
       style={{ width: size, height: size }}

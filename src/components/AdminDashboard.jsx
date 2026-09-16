@@ -4180,7 +4180,7 @@ export const AdminDashboard = ({
             <div className="flex justify-center">
               <div className="w-full max-w-[320px] bg-white border border-slate-300 rounded-2xl p-3 sm:p-4 shadow-inner text-slate-900 relative overflow-hidden">
                 {/* ID Background Image */}
-                <img src="img/id.png" alt="" className="absolute inset-0 w-full h-full object-cover pointer-events-none" />
+                <img src="/images/id-card.png" alt="" className="absolute inset-0 w-full h-full object-cover pointer-events-none" />
                 <div className="relative z-10">
                   <div className="absolute top-0 right-0 font-mono text-[7px] text-slate-400 tracking-wider">
                     MEMBER PASS • STATE DIGITAL GATE

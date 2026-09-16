@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from "react";
 import { PLRCLogo } from "./Logo";
-import loginBackground from "../../img/bg.jpg";
+import loginBackground from "/images/background.jpg";
 import {
   Lock,
   User as UserIcon,
