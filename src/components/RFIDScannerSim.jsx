@@ -93,7 +93,7 @@ export const RFIDScannerSim = ({
   // Real-time ticker state
   const [currentTime, setCurrentTime] = useState(new Date());
   const [scanMethod, setScanMethod] = useState(initialScanMethod); // "RFID" | "WEBCAM" | "UPLOAD" | "SIM_DROP"
-  const quotaResetMs = 15 * 60 * 60 * 1000;
+  const quotaResetMs = 12 * 60 * 60 * 1000;
 
   useEffect(() => {
     setScanMethod(initialScanMethod);
