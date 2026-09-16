@@ -89,18 +89,18 @@ const downloadReservationAttachment = (attachment) => {
 };
 
 const getAreaForService = (serviceName = "") => {
-  const service = serviceName.toLowerCase();
+  const service = serviceName.trim().toLowerCase();
   if (service.includes("qr code entrance")) return "QR Code Entrance";
-  if (service.includes("wifi") || service.includes("voucher")) return "Vouchers";
+  if (service.includes("wi-fi") || service.includes("wifi") || service.includes("voucher")) return "Vouchers";
   if (service.includes("charging") || service.includes("slip")) return "Charging";
-  if (service.includes("printing") || service.includes("")) return "Printing";
-  if (service.includes("cinema") || service.includes("ubag")) return "Ubag Cinema";
+  if (service.includes("ubag") || service.includes("cinema")) return "Ubag Cinema";
   if (service.includes("play")) return "Play Area";
   if (service.includes("pvao")) return "PVAO Area";
   if (service.includes("pwd")) return "PWD Area";
-  if (service.includes("biwag") || service.includes("room 1")) return "Discussion Room 1";
-  if (service.includes("malana") || service.includes("room 2")) return "Discussion Room 2";
-  if (service.includes("auto") || service.includes("intern")) return "DIGITAL TRANSPORTATION CENTER";
+  if (service.includes("biwag") || service.includes("discussion room 1") || service.includes("room 1")) return "Discussion Room 1";
+  if (service.includes("malana") || service.includes("discussion room 2") || service.includes("room 2")) return "Discussion Room 2";
+  if (service.includes("auto") || service.includes("intern") || service.includes("transport")) return "DIGITAL TRANSPORTATION CENTER";
+  if (service.includes("printing")) return "Printing";
   return serviceName || "Internet Area";
 };
 
@@ -194,7 +194,7 @@ export const getLogDetails = (l, users) => {
   } else if (!l.terminalLocation && (area === "Discussion Room 1" || area === "Discussion Room 2")) {
     station = "2F STUDY & DISCUSSION";
   } else if (!l.terminalLocation && (checkSrv("auto") || checkSrv("intern"))) {
-    station = "DIGITAL TRASPORTATION CENTER";
+    station = "DIGITAL TRANSPORTATION CENTER";
   } else if (!l.terminalLocation && area === "Printing") {
     station = "PRINTING SECTOR";
   }
