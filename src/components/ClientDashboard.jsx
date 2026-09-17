@@ -757,7 +757,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
                   {/* Card Content Layout */}
                   <div className="flex-1 min-h-0 flex gap-2 sm:gap-4 items-stretch relative z-20">
                     {/* Left side: Client profile photo inside exact frame */}
-                    <div className="w-[22%] max-w-32 h-auto aspect-[3/4] bg-slate-100 border-2 border-dashed border-slate-300 rounded-xl overflow-hidden flex flex-col items-center justify-center relative shrink-0 sm:w-28 md:w-32">
+                    <div className="w-[22%] max-w-32 h-auto aspect-[3/4] md:aspect-square md:self-start bg-slate-100 border-2 border-dashed border-slate-300 rounded-xl overflow-hidden flex flex-col items-center justify-center relative shrink-0 sm:w-28 md:w-32">
                       {clientInfo.photoUrl ? (
                         <img
                           src={clientInfo.photoUrl}
