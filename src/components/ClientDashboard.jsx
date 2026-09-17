@@ -22,6 +22,7 @@ import {
 import { PLRCLogo } from "./Logo";
 import { api } from "../services/api";
 import { EResources } from "./EResources";
+import Barcode from "react-barcode";
 
 const RESERVATION_TIME_OPTIONS = [
   "AM (8:00 AM - 12:00 PM)",
@@ -843,23 +844,29 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
                     </div>
                   </div>
 
-                  {/* Card bottom: Scanning barcode representer with numeric index printing */}
+                  {/* Card bottom: machine-readable CODE 128 barcode for the card number */}
                   <div className="mt-3 border-t border-slate-100 pt-1.5 flex flex-col items-center justify-center shrink-0 relative z-20">
-                    {/* Replicated simulated bar lines */}
-                    <div className="h-6 flex items-center justify-center tracking-[px] opacity-85 select-none scale-y-110">
-                      {"|||| | ||| |||| | | ||| || |||| | | |||| | | |||| | ||| ||||"
-                        .split("")
-                        .map((char, i) => (
-                          <span
-                            key={i}
-                            className={`inline-block h-full bg-slate-900 ${
-                              char === " " ? "w-[1.5px]" : "w-[3px]"
-                            }`}
-                          />
-                        ))}
-                    </div>
+                    {String(clientInfo.rfid || "").trim() ? (
+                      <div className="w-full max-w-[320px] overflow-hidden bg-white px-2 py-1">
+                        <Barcode
+                          value={String(clientInfo.rfid).trim()}
+                          format="CODE128"
+                          width={1.5}
+                          height={42}
+                          displayValue={false}
+                          margin={0}
+                          background="#ffffff"
+                          lineColor="#0f172a"
+                          className="block h-auto w-full"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex h-[42px] w-full max-w-[320px] items-center justify-center bg-white px-2 text-[8px] font-bold uppercase tracking-wider text-slate-400">
+                        Barcode unavailable
+                      </div>
+                    )}
                     <p className="text-[9.5px] font-mono tracking-[4px] font-black text-slate-950 mt-1 uppercase text-center">
-                      {clientInfo.rfid}
+                      {String(clientInfo.rfid || "").trim() || "NO CARD NUMBER"}
                     </p>
                   </div>
                 </div>
