@@ -451,32 +451,6 @@ export const AdminDashboard = ({
     setRoomDisableModal(null);
   };
 
-  const configureRoomTimeSlots = (roomConfig) => {
-    const currentSlots = roomConfig.timeSlots?.length
-      ? roomConfig.timeSlots
-      : DEFAULT_DISCUSSION_ROOM_TIME_SLOTS;
-    setRoomTimeSlotEditor({
-      roomName: roomConfig.name,
-      timeSlots: currentSlots.join(", "),
-    });
-  };
-
-  const handleSaveRoomTimeSlots = async () => {
-    const timeSlots = roomTimeSlotEditor.timeSlots
-      .split(",")
-      .map((slot) => slot.trim())
-      .filter(Boolean);
-    if (timeSlots.length === 0) {
-      alert("Please enter at least one time slot.");
-      return;
-    }
-    const nextRooms = rooms.map((item) =>
-      item.name === roomTimeSlotEditor.roomName ? { ...item, timeSlots } : item,
-    );
-    await saveSettings(institutions, patronTypes, nextRooms);
-    setRoomTimeSlotEditor(null);
-  };
-
   const [userQuery, setUserQuery] = useState("");
   const [userPage, setUserPage] = useState(1);
   const userRowsPerPage = 10;
@@ -627,7 +601,6 @@ export const AdminDashboard = ({
   const [selectedCalendarReservationDate, setSelectedCalendarReservationDate] = useState(null);
   const [rejectingReservation, setRejectingReservation] = useState(null);
   const [reservationRejectReason, setReservationRejectReason] = useState("");
-  const [roomTimeSlotEditor, setRoomTimeSlotEditor] = useState(null);
   const [roomDisableModal, setRoomDisableModal] = useState(null);
   const [roomEditor, setRoomEditor] = useState(null);
   const [reservationPage, setReservationPage] = useState(1);
@@ -3631,13 +3604,6 @@ export const AdminDashboard = ({
                               <div className="flex items-center gap-2">
                                 <button
                                   type="button"
-                                  onClick={() => configureRoomTimeSlots(room)}
-                                  className="px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-colors cursor-pointer bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200"
-                                >
-                                  Configure Times
-                                </button>
-                                <button
-                                  type="button"
                                   onClick={() => handleEditRoom(room)}
                                   className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-colors cursor-pointer"
                                   title={`Edit ${room.name}`}
@@ -3824,70 +3790,6 @@ export const AdminDashboard = ({
         </div>
       )}
 
-      {roomTimeSlotEditor && (
-        <div
-          className="fixed inset-0 z-[95] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setRoomTimeSlotEditor(null);
-          }}
-        >
-          <div className="w-full max-w-lg my-auto bg-white rounded-2xl shadow-2xl border border-blue-100 overflow-hidden">
-            <div className="bg-gradient-to-r from-[#1E3A8A] to-blue-600 px-5 py-4 text-white flex items-start justify-between gap-4">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-blue-100">
-                  Reservation Time Settings
-                </p>
-                <h3 className="text-lg font-black mt-1">{roomTimeSlotEditor.roomName}</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setRoomTimeSlotEditor(null)}
-                className="p-1.5 rounded-lg text-blue-100 hover:text-white hover:bg-white/15 transition-colors"
-                title="Close time settings"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="p-5">
-              <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1.5">
-                Time Slots
-              </label>
-              <textarea
-                value={roomTimeSlotEditor.timeSlots}
-                onChange={(event) =>
-                  setRoomTimeSlotEditor((current) => ({
-                    ...current,
-                    timeSlots: event.target.value,
-                  }))
-                }
-                rows={5}
-                placeholder="8:00am-9:00am, 9:00am-10:00am"
-                className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-800 bg-slate-50 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
-              />
-              <p className="text-[10px] text-slate-400 mt-2">
-                Separate each available time slot with a comma.
-              </p>
-              <div className="mt-5 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setRoomTimeSlotEditor(null)}
-                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-[10px] font-black uppercase tracking-wider hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveRoomTimeSlots}
-                  className="px-4 py-2 rounded-xl bg-blue-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-blue-700 shadow-sm"
-                >
-                  Save Time Slots
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {selectedCalendarReservationDate && (
         <div
