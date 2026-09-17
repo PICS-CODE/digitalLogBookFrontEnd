@@ -329,11 +329,26 @@ export const AdminDashboard = ({
       alert("This room is already in the settings list.");
       return;
     }
-    await saveSettings(institutions, patronTypes, [
-      ...rooms,
-      { name, enabled: true, disabledReason: "", timeSlots: getDefaultRoomTimeSlots(name) },
-    ]);
-    setNewRoomInput("");
+    try {
+      await saveSettings(institutions, patronTypes, [
+        ...rooms,
+        { name, enabled: true, disabledReason: "", timeSlots: getDefaultRoomTimeSlots(name) },
+      ]);
+      setNewRoomInput("");
+      await Swal.fire({
+        icon: "success",
+        title: "Room Added",
+        text: `${name} is now available in the room settings.`,
+        confirmButtonColor: "#2563eb",
+      });
+    } catch (error) {
+      await Swal.fire({
+        icon: "error",
+        title: "Unable to Add Room",
+        text: error.message || "The room could not be saved.",
+        confirmButtonColor: "#2563eb",
+      });
+    }
   };
 
   const handleEditRoom = (room) => {
@@ -364,12 +379,27 @@ export const AdminDashboard = ({
       alert("This room is already in the settings list.");
       return;
     }
-    await saveSettings(institutions, patronTypes, rooms.map((room) =>
-      room.name === roomEditor.originalName
-        ? { ...room, name, enabled: roomEditor.enabled, disabledReason: roomEditor.disabledReason.trim(), timeSlots }
-        : room,
-    ));
-    setRoomEditor(null);
+    try {
+      await saveSettings(institutions, patronTypes, rooms.map((room) =>
+        room.name === roomEditor.originalName
+          ? { ...room, name, enabled: roomEditor.enabled, disabledReason: roomEditor.disabledReason.trim(), timeSlots }
+          : room,
+      ));
+      setRoomEditor(null);
+      await Swal.fire({
+        icon: "success",
+        title: "Room Updated",
+        text: `${name} has been updated successfully.`,
+        confirmButtonColor: "#2563eb",
+      });
+    } catch (error) {
+      await Swal.fire({
+        icon: "error",
+        title: "Unable to Update Room",
+        text: error.message || "The room could not be updated.",
+        confirmButtonColor: "#2563eb",
+      });
+    }
   };
 
   const handleDeleteRoom = async (room) => {
