@@ -406,19 +406,18 @@ export const RFIDScannerSim = ({
     "2F STUDY & DISCUSSION",
     "3F CO-WORKING ZONE",
     "4F QUIET STUDY HUB",
-    "DIGITAL TRANSPORTATION CENTER",
+    "DIGITAL TRANSFORMATION CENTER",
     "PRINTING SECTOR",
   ];
+
+  const shouldAllowQrEntrance = onlyQrMode || initialTerminalLocation === "INTERNET AREA";
 
   const getServicesForLocation = (location) => {
     // QR scanners are entrance checkpoints, not service-selection terminals.
     if (onlyQrMode) {
       if (location === "1F WALK-IN RECEPTION") {
         return [
-          { id: "qr_1f", name: "1st Floor", icon: "Library", description: "QR entrance assignment for the 1st Floor.", color: "sky" },
-          { id: "qr_2f", name: "2nd Floor", icon: "Library", description: "QR entrance assignment for the 2nd Floor.", color: "sky" },
-          { id: "qr_3f", name: "3rd Floor", icon: "Library", description: "QR entrance assignment for the 3rd Floor.", color: "sky" },
-          { id: "qr_4f", name: "4th Floor", icon: "Library", description: "QR entrance assignment for the 4th Floor.", color: "sky" },
+          { id: "qr_1f", name: "1F WALK-IN RECEPTION", icon: "Library", description: "QR entrance assignment for the 1F Walk-In Reception.", color: "sky" },
         ];
       }
       const isInternetArea = location === "INTERNET AREA" || location === "PRINTING SECTOR";
@@ -585,11 +584,12 @@ export const RFIDScannerSim = ({
             color: "amber",
           },
         ];
+      case "DIGITAL TRANSFORMATION CENTER":
       case "DIGITAL TRANSPORTATION CENTER":
         return [
           {
             id: "intern_auto",
-            name: "Digital Transportation Center",
+            name: "DIGITAL TRANSFORMATION CENTER",
             icon: "Activity",
             description: "Automatic logbook log-in for active CPLRC Interns.",
             color: "emerald",
@@ -727,7 +727,10 @@ export const RFIDScannerSim = ({
     }
 
     // Intern Auto-Deck remains an automatic check-in terminal.
-    if (terminalLocation === "DIGITAL TRANSPORTATION CENTER") {
+    if (
+      terminalLocation === "DIGITAL TRANSFORMATION CENTER" ||
+      terminalLocation === "DIGITAL TRANSPORTATION CENTER"
+    ) {
       const checkInTime = new Date().toISOString();
 
       onAddLog({
@@ -2255,7 +2258,7 @@ export const RFIDScannerSim = ({
 
             {/* Mode Switch Tab buttons */}
             <div className="flex bg-slate-950 rounded-lg p-1 border border-slate-850 gap-1 text-[10px] font-mono leading-none font-bold mb-3.5">
-              {!onlyQrMode && (
+              {(!onlyQrMode && initialTerminalLocation !== "INTERNET AREA") && (
                 <button
                   type="button"
                   onClick={() => {
@@ -2271,47 +2274,37 @@ export const RFIDScannerSim = ({
                   📟 RFID Swiper
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => {
-                  setScanMethod("WEBCAM");
-                }}
-                className={`flex-1 py-1.5 rounded uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1 ${
-                  scanMethod === "WEBCAM"
-                    ? "bg-cyan-500 text-slate-950 font-black shadow"
-                    : "text-slate-400 hover:text-white"
-                }`}
-              >
-                <Camera size={10} /> Live QR Cam
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  stopWebcam();
-                  setScanMethod("UPLOAD");
-                }}
-                className={`flex-1 py-1.5 rounded uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1 ${
-                  scanMethod === "UPLOAD"
-                    ? "bg-sky-500 text-slate-950 font-black shadow"
-                    : "text-slate-400 hover:text-white"
-                }`}
-              >
-                <Upload size={10} /> QR File
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  stopWebcam();
-                  setScanMethod("SIM_DROP");
-                }}
-                className={`flex-1 py-1.5 rounded uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1 ${
-                  scanMethod === "SIM_DROP"
-                    ? "bg-purple-600 text-white font-black shadow"
-                    : "text-slate-400 hover:text-white"
-                }`}
-              >
-                ⚡ Sim Pass
-              </button>
+              {(onlyQrMode || initialTerminalLocation === "INTERNET AREA") && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScanMethod("WEBCAM");
+                  }}
+                  className={`flex-1 py-1.5 rounded uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                    scanMethod === "WEBCAM"
+                      ? "bg-cyan-500 text-slate-950 font-black shadow"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  <Camera size={10} /> Live QR Cam
+                </button>
+              )}
+              {!onlyQrMode && initialTerminalLocation === "INTERNET AREA" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    stopWebcam();
+                    setScanMethod("RFID");
+                  }}
+                  className={`flex-1 py-1.5 rounded uppercase tracking-wider transition-all cursor-pointer ${
+                    scanMethod === "RFID"
+                      ? "bg-amber-500 text-slate-950 font-black shadow"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  📟 RFID Swiper
+                </button>
+              )}
             </div>
 
             {/* TAB CONTAINER: RFID SWIPER */}

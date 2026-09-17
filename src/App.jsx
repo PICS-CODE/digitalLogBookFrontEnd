@@ -401,7 +401,7 @@ export default function App() {
 
   // Determine if we should render navigation chrome headers
   const isStandaloneMode =
-    currentView === "STANDALONE" || currentView === "QR_SCANNER" || currentView === "CPLRC_SUB_QR" || currentView === "ADMIN_LOGIN" || currentView === "CLIENT_LOGIN";
+    currentView === "STANDALONE" || currentView === "QR_SCANNER" || currentView === "CPLRC_SUB_QR" || currentView === "INTERNET_AREA" || currentView === "ADMIN_LOGIN" || currentView === "CLIENT_LOGIN";
   const isQrRegistrationMode = currentView === "QR_REGISTRATION";
 
   return (
@@ -704,15 +704,15 @@ export default function App() {
         /* DISCREET TOP STRIP FOR STANDALONE MODE TO EASILY HEAD BACK */
         <div className="bg-slate-950 py-1.5 px-4 scroll-smooth border-b border-slate-900 flex justify-between items-center text-[10px] font-mono text-slate-500 tracking-wider">
           <div className="flex items-center gap-2">
-            <span className={`w-1.5 h-1.5 rounded-full animate-ping ${currentView === "QR_SCANNER" || currentView === "CPLRC_SUB_QR" ? "bg-cyan-400" : "bg-sky-500"}`} />
+            <span className={`w-1.5 h-1.5 rounded-full animate-ping ${currentView === "QR_SCANNER" || currentView === "CPLRC_SUB_QR" || currentView === "INTERNET_AREA" ? "bg-cyan-400" : "bg-sky-500"}`} />
             <span className="text-slate-300 font-bold uppercase text-[9px] sm:text-[10px]">
-              {currentView === "QR_SCANNER" || currentView === "CPLRC_SUB_QR"
+              {currentView === "QR_SCANNER" || currentView === "CPLRC_SUB_QR" || currentView === "INTERNET_AREA"
                 ? "DEDICATED PORTABLE QR DISPATCH CHECK-IN ROUTE"
                 : " Cagayan Provincial Learning and Resource Center"}
             </span>
           </div>
           <div className="flex items-center gap-3">
-            {currentView === "QR_SCANNER" || currentView === "CPLRC_SUB_QR" ? (
+            {currentView === "QR_SCANNER" || currentView === "CPLRC_SUB_QR" || currentView === "INTERNET_AREA" ? (
               <button
                 onClick={() => changeRoute("STANDALONE")}
                 className="text-[9px] bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 px-2.5 py-0.5 rounded font-bold uppercase transition-all"
@@ -749,17 +749,8 @@ export default function App() {
           <div
             className={isStandaloneMode || isQrRegistrationMode ? "py-0 bg-slate-950" : "py-5"}
           >
-            {/* Header info guidance */}
-            {!isStandaloneMode && (
-              <div className="max-w-4xl mx-auto mb-5 px-4 text-center select-none">
-                
-                <h2 className="text-sm sm:text-base font-extrabold text-slate-100 tracking-tight mt-1 uppercase">
-                  TAP YOUR PHYSICAL RFID CARD TO START LOGGING
-                </h2>
-                <div className="h-[2px] w-12 bg-[#38BDF8] mx-auto mt-2 rounded-full" />
-              
-              </div>
-            )}
+            
+           
 
             {/* Simulated RFID scanner kiosk */}
             <RFIDScannerSim
@@ -771,15 +762,15 @@ export default function App() {
               onQrClientsRefresh={saveQrClients}
               onUpdateLog={handleUpdateLog}
               onRegisterClick={() => setShowNewUserModal(true)} // This will now open the admin's add user modal
-              initialScanMethod={currentView === "QR_SCANNER" || currentView === "CPLRC_SUB_QR" ? "WEBCAM" : "RFID"}
+              initialScanMethod={currentView === "QR_SCANNER" || currentView === "CPLRC_SUB_QR" || currentView === "INTERNET_AREA" ? "WEBCAM" : "RFID"}
               initialTerminalLocation={
                 currentView === "CPLRC_SUB_QR"
                   ? "CPLRC SUB"
                   : currentView === "INTERNET_AREA"
-                    ? "INTERNET AREA"
+                    ? "DIGITAL TRANSFORMATION CENTER"
                     : "1F WALK-IN RECEPTION"
               }
-              onlyQrMode={currentView === "QR_SCANNER" || currentView === "CPLRC_SUB_QR"}
+              onlyQrMode={currentView === "QR_SCANNER" || currentView === "CPLRC_SUB_QR" || currentView === "INTERNET_AREA"}
               manualRfidScan={manualRfidScan}
               manualRfid={manualRfid}
               onManualRfidChange={setManualRfid}
@@ -847,36 +838,7 @@ export default function App() {
       </main>
 
       {/* Footer bar - Rich Monospace Diagnostics - HIDDEN IN STANDALONE MODE */}
-      {!isStandaloneMode && !isQrRegistrationMode && currentView !== "CLIENT" && (
-        <footer className="bg-slate-900 text-slate-400 border-t border-slate-800 py-3 text-[10px] font-mono shrink-0 select-none">
-          <div className="max-w-7xl mx-auto px-4 sm:px-5 flex flex-col sm:flex-row justify-between items-center gap-2">
-            <div className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
-              <span>SYSTEM STATE: ACTIVE PERSISTENCE</span>
-              <span className="text-slate-850">|</span>
-              <span>INDEX: CPLRC_CAPITOL_V2.5</span>
-            </div>
-
-            <div className="text-slate-500 text-center sm:text-left text-[9.5px]">
-              CAGAYAN PROVINCIAL CAPITOL COMPOUND, ALIMANNAO, TUGUEGARAO CITY
-            </div>
-
-            <div className="flex items-center gap-3 text-slate-500">
-              <span className="hidden sm:inline">
-                PING:{" "}
-                <strong className="text-emerald-400 font-mono">1.1ms</strong>
-              </span>
-              <span className="text-slate-800 hidden sm:inline">|</span>
-              <span>
-                ACC_KEY:{" "}
-                <strong className="text-slate-400 font-mono">
-                  RFID_TAPE_READY
-                </strong>
-              </span>
-            </div>
-          </div>
-        </footer>
-      )}
+      
     </div>
   );
 }
