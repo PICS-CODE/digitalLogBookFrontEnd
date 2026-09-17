@@ -28,7 +28,6 @@ import {
   Download,
   BookOpen,
 } from "lucide-react";
-import { SERVICE_OPTIONS } from "../data/mockData";
 import { PLRCLogo } from "./Logo";
 import QRCode from "qrcode";
 import Swal from "sweetalert2";
@@ -58,7 +57,7 @@ const STANDARD_RESERVATION_TIME_SLOTS = [
 ];
 
 const getDefaultRoomTimeSlots = (roomName) =>
-  roomName === "Discussion Room (BIWAG)" || roomName === "Discussion Room (MALANA)"
+  roomName === "Discussion Room (BIUAG)" || roomName === "Discussion Room (MALANA)"
     ? DEFAULT_DISCUSSION_ROOM_TIME_SLOTS
     : STANDARD_RESERVATION_TIME_SLOTS;
 
@@ -97,8 +96,8 @@ const getAreaForService = (serviceName = "") => {
   if (service.includes("play")) return "Play Area";
   if (service.includes("pvao")) return "PVAO Area";
   if (service.includes("pwd")) return "PWD Area";
-  if (service.includes("biwag") || service.includes("discussion room 1") || service.includes("room 1")) return "Discussion Room 1";
-  if (service.includes("malana") || service.includes("discussion room 2") || service.includes("room 2")) return "Discussion Room 2";
+  if (service.includes("biuag") || service.includes("biwag") || service.includes("discussion room 1") || service.includes("room 1")) return "Discussion Room 1 (BIUAG)";
+  if (service.includes("malana") || service.includes("discussion room 2") || service.includes("room 2")) return "Discussion Room 2 (MALANA)";
   if (service.includes("auto") || service.includes("intern") || service.includes("transport")) return "DIGITAL TRANSPORTATION CENTER";
   if (service.includes("printing")) return "Printing";
   return serviceName || "Internet Area";
@@ -110,6 +109,36 @@ const getAreaBadgeClass = (area = "") => {
   if (area === "Internet Area") return "bg-blue-100 text-blue-800";
   if (area === "Printing") return "bg-rose-100 text-rose-800";
   return "bg-purple-100 text-purple-800";
+};
+
+const SERVICE_INDEX_CATEGORIES = [
+  { id: "digital-transportation", name: "Digital Transportation Center", aliases: ["digital transportation center", "intern auto log", "intern auto", "transport"] },
+  { id: "biuag", name: "BIUAG", aliases: ["biuag", "biwag"] },
+  { id: "all-wifi-voucher", name: "All WiFi Voucher", aliases: ["wi-fi voucher", "wifi voucher", "all wifi voucher"] },
+  { id: "charging-slip", name: "Charging Slip", aliases: ["charging slip"] },
+  { id: "ubag-cinema", name: "Ubag Cinema", aliases: ["ubag cinema", "cinema"] },
+  { id: "play-area", name: "Play Area", aliases: ["play area"] },
+  { id: "discussion-room-1-biuag", name: "Discussion Room 1 (BIUAG)", aliases: ["discussion room 1 (biuag)", "discussion room 1 (biwag)", "discussion room 1", "room 1"] },
+  { id: "discussion-room-2-malana", name: "Discussion Room 2 (MALANA)", aliases: ["discussion room 2 (malana)", "discussion room 2", "malana", "room 2"] },
+  { id: "pvao", name: "PVAO", aliases: ["pvao", "pvao area"] },
+  { id: "pwd-area", name: "PWD Area", aliases: ["pwd", "pwd area"] },
+  { id: "free-printing", name: "Free Printing", aliases: ["free printing", "printing"] },
+  { id: "internet-area", name: "Internet Area", aliases: ["internet area"] },
+];
+
+const CPLRC_SUB_SERVICE_CATEGORIES = [
+  { id: "cplrc-entrance", name: "Entrance", aliases: ["entrance", "qr code entrance"] },
+  { id: "cplrc-wifi", name: "WiFi Voucher", aliases: ["wi-fi voucher", "wifi voucher", "all wifi voucher"] },
+  { id: "cplrc-charging", name: "Charging Slip", aliases: ["charging slip"] },
+  { id: "cplrc-printing", name: "Printing", aliases: ["printing", "free printing"] },
+  { id: "cplrc-internet", name: "Internet Area", aliases: ["internet area"] },
+];
+
+const normalizeServiceName = (serviceName = "") => serviceName.trim().toLowerCase().replace(/\s+/g, " ");
+
+const serviceMatchesCategory = (serviceName, category) => {
+  const normalized = normalizeServiceName(serviceName);
+  return category.aliases.some((alias) => normalized === alias || normalized.includes(alias));
 };
 
 export const getLogDetails = (l, users) => {
@@ -191,7 +220,7 @@ export const getLogDetails = (l, users) => {
     station = "3F CIRCULATION SERVICES";
   } else if (!l.terminalLocation && area === "Charging") {
     station = "1F CIRCULATION SERVICES";
-  } else if (!l.terminalLocation && (area === "Discussion Room 1" || area === "Discussion Room 2")) {
+  } else if (!l.terminalLocation && (area === "Discussion Room 1 (BIUAG)" || area === "Discussion Room 2 (MALANA)")) {
     station = "2F STUDY & DISCUSSION";
   } else if (!l.terminalLocation && (checkSrv("auto") || checkSrv("intern"))) {
     station = "DIGITAL TRANSPORTATION CENTER";
@@ -257,7 +286,7 @@ export const AdminDashboard = ({
       } catch (_) {}
     }
     return [
-      "Discussion Room (BIWAG)",
+      "Discussion Room (BIUAG)",
       "Discussion Room (MALANA)",
       "Conference Room",
       "Ubag Cinema",
@@ -635,7 +664,7 @@ export const AdminDashboard = ({
   const [newResName, setNewResName] = useState("");
   const [newResPatronType, setNewResPatronType] = useState("Student");
   const [newResDate, setNewResDate] = useState(() => new Date().toISOString().split("T")[0]);
-  const [newResRoom, setNewResRoom] = useState("Discussion Room (BIWAG)");
+  const [newResRoom, setNewResRoom] = useState("Discussion Room (BIUAG)");
   const [newResTimeSlot, setNewResTimeSlot] = useState("");
   const [newResPurpose, setNewResPurpose] = useState("");
   const [selectedCalendarReservationDate, setSelectedCalendarReservationDate] = useState(null);
@@ -805,6 +834,9 @@ export const AdminDashboard = ({
   const [cplrcSubServiceFilter, setCplrcSubServiceFilter] = useState("all");
   const [cplrcSubStartDate, setCplrcSubStartDate] = useState("");
   const [cplrcSubEndDate, setCplrcSubEndDate] = useState("");
+  const [serviceIndexPeriod, setServiceIndexPeriod] = useState("all");
+  const [serviceIndexStartDate, setServiceIndexStartDate] = useState("");
+  const [serviceIndexEndDate, setServiceIndexEndDate] = useState("");
 
   const [editingUser, setEditingUser] = useState(null);
 
@@ -1356,7 +1388,49 @@ export const AdminDashboard = ({
     );
   };
 
-  // Dynamic statistics
+  const getServiceIndexDateRange = () => {
+    const now = new Date();
+    const start = new Date(now);
+    const end = new Date(now);
+    if (serviceIndexPeriod === "today") {
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+    } else if (serviceIndexPeriod === "yesterday") {
+      start.setDate(start.getDate() - 1);
+      start.setHours(0, 0, 0, 0);
+      end.setTime(start.getTime());
+      end.setHours(23, 59, 59, 999);
+    } else if (serviceIndexPeriod === "week") {
+      start.setDate(start.getDate() - start.getDay());
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+    } else if (serviceIndexPeriod === "month") {
+      start.setDate(1);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+    } else if (serviceIndexPeriod === "year") {
+      start.setMonth(0, 1);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+    } else if (serviceIndexPeriod === "custom") {
+      return {
+        start: serviceIndexStartDate ? new Date(`${serviceIndexStartDate}T00:00:00`) : null,
+        end: serviceIndexEndDate ? new Date(`${serviceIndexEndDate}T23:59:59.999`) : null,
+      };
+    } else {
+      return { start: null, end: null };
+    }
+    return { start, end };
+  };
+
+  const isInServiceIndexDateRange = (log) => {
+    const { start, end } = getServiceIndexDateRange();
+    const timestamp = new Date(log.checkInTime).getTime();
+    return (!start || timestamp >= start.getTime()) && (!end || timestamp <= end.getTime());
+  };
+
+  // Dynamic statistics. Legacy service names are normalized only for reporting;
+  // the original log records remain unchanged.
   const totalMembers = users.length;
   const activeStays = logs.filter((l) => l.status === "ACTIVE").length;
   // Pending reservations count matching badge precisely
@@ -1364,17 +1438,21 @@ export const AdminDashboard = ({
     (r) => r.status === "PENDING",
   ).length;
 
-  const serviceCounts = {};
-  logs.forEach((l) => {
-    l.services.forEach((srv) => {
-      serviceCounts[srv] = (serviceCounts[srv] || 0) + 1;
-    });
-  });
-  const formattedServices = SERVICE_OPTIONS.map((srv) => ({
-    name: srv.name,
-    count: serviceCounts[srv.name] || 0,
-    color: srv.color,
+  const serviceIndexLogs = logs.filter(isInServiceIndexDateRange);
+  const countServiceCategory = (category, sourceLogs = serviceIndexLogs) => sourceLogs.reduce(
+    (count, log) => count + (log.services || []).filter((service) => serviceMatchesCategory(service, category)).length,
+    0,
+  );
+  const formattedServices = SERVICE_INDEX_CATEGORIES.map((category) => ({
+    name: category.name,
+    count: countServiceCategory(category),
+    color: "blue",
   })).sort((a, b) => b.count - a.count);
+  const formattedCplrcSubServices = CPLRC_SUB_SERVICE_CATEGORIES.map((category) => ({
+    name: category.name,
+    count: countServiceCategory(category, serviceIndexLogs.filter((log) => log.terminalLocation === "CPLRC SUB")),
+    color: "violet",
+  }));
 
   // Calendar Helpers
   const getDaysInMonth = (year, month) => {
@@ -2914,10 +2992,67 @@ export const AdminDashboard = ({
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8 select-none">
                     {/* Utilized Services bars chart */}
                     <div className="bg-white p-6 rounded-2xl border border-gray-150">
-                      <h3 className="font-extrabold text-xs text-slate-500 uppercase tracking-wider mb-6 flex items-center gap-2">
+                      <div className="flex flex-col gap-3 mb-6 sm:flex-row sm:items-start sm:justify-between">
+                        <h3 className="font-extrabold text-xs text-slate-500 uppercase tracking-wider flex items-center gap-2">
                         <Sparkles className="text-amber-500" size={16} /> Most
                         Utilized Services Index
-                      </h3>
+                        </h3>
+                        <select
+                          value={serviceIndexPeriod}
+                          onChange={(event) => setServiceIndexPeriod(event.target.value)}
+                          className="w-full sm:w-auto rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-700"
+                          aria-label="Most utilized services date range"
+                        >
+                          <option value="all">All Time</option>
+                          <option value="today">Today</option>
+                          <option value="yesterday">Yesterday</option>
+                          <option value="week">This Week</option>
+                          <option value="month">This Month</option>
+                          <option value="year">This Year</option>
+                          <option value="custom">Custom Date Range</option>
+                        </select>
+                      </div>
+
+                      {serviceIndexPeriod === "custom" && (
+                        <div className="mb-6 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto_auto] sm:items-end">
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                            Start Date
+                            <input
+                              type="date"
+                              value={serviceIndexStartDate}
+                              onChange={(event) => setServiceIndexStartDate(event.target.value)}
+                              className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-2 text-xs text-slate-700"
+                            />
+                          </label>
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                            End Date
+                            <input
+                              type="date"
+                              value={serviceIndexEndDate}
+                              onChange={(event) => setServiceIndexEndDate(event.target.value)}
+                              className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-2 text-xs text-slate-700"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setServiceIndexPeriod("custom")}
+                            className="rounded-lg bg-blue-600 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-white"
+                          >
+                            Apply Filter
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setServiceIndexStartDate("");
+                              setServiceIndexEndDate("");
+                              setServiceIndexPeriod("all");
+                            }}
+                            className="rounded-lg border border-slate-200 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-600"
+                          >
+                            Reset Filter
+                          </button>
+                        </div>
+                      )}
 
                       <div className="space-y-4">
                         {formattedServices.map((srv, index) => {
@@ -2949,6 +3084,29 @@ export const AdminDashboard = ({
                             </div>
                           );
                         })}
+                      </div>
+
+                      <div className="mt-8 border-t border-violet-100 pt-5">
+                        <h4 className="mb-4 text-[10px] font-black uppercase tracking-wider text-violet-700">
+                          CPLRC SUB Services
+                        </h4>
+                        <div className="space-y-3">
+                          {formattedCplrcSubServices.map((service) => {
+                            const maxCount = Math.max(...formattedCplrcSubServices.map((item) => item.count), 1);
+                            const widthPercentage = Math.round((service.count / maxCount) * 100);
+                            return (
+                              <div key={service.name} className="space-y-1">
+                                <div className="flex justify-between gap-3 text-xs font-bold text-slate-800">
+                                  <span className="min-w-0 truncate">{service.name}</span>
+                                  <span className="shrink-0 font-mono text-gray-500">{service.count} requests</span>
+                                </div>
+                                <div className="h-2.5 w-full overflow-hidden rounded-full border border-violet-100 bg-violet-50">
+                                  <div className="h-full rounded-full bg-violet-500 transition-all duration-500" style={{ width: `${widthPercentage}%` }} />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
                     </div>
 

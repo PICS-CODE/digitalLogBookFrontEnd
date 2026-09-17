@@ -523,8 +523,8 @@ export const RFIDScannerSim = ({
       case "2F STUDY & DISCUSSION":
         return [
           {
-            id: "biwag",
-            name: "Discussion Room 1 (BIWAG)",
+            id: "biuag",
+            name: "Discussion Room 1 (BIUAG)",
             icon: "Library",
             description: "Collaborative space. Max stay interval 1 hour.",
             color: "indigo",
@@ -589,7 +589,7 @@ export const RFIDScannerSim = ({
         return [
           {
             id: "intern_auto",
-            name: "Intern Auto Log",
+            name: "Digital Transportation Center",
             icon: "Activity",
             description: "Automatic logbook log-in for active CPLRC Interns.",
             color: "emerald",
@@ -735,7 +735,7 @@ export const RFIDScannerSim = ({
         rfid: matchedUser.rfid,
         userFullName: `${matchedUser.givenName} ${matchedUser.middleName ? matchedUser.middleName + " " : ""}${matchedUser.lastName}`,
         patronType: matchedUser.patronType,
-        services: ["Intern Auto Log"],
+        services: ["Digital Transportation Center"],
         terminalLocation,
         entryType: onlyQrMode ? "QR_CODE_ENTRANCE" : "RFID_CHECK_IN",
         checkInTime,
@@ -1763,6 +1763,7 @@ export const RFIDScannerSim = ({
                         selectedServices.some(
                           (s) =>
                             s.toUpperCase().includes("BIWAG") ||
+                            s.toUpperCase().includes("BIUAG") ||
                             s.toUpperCase().includes("MALANA"),
                         )) && (
                         <div className="space-y-2 border-t border-slate-800/85 pt-3 animate-in fade-in duration-200">
@@ -1787,6 +1788,7 @@ export const RFIDScannerSim = ({
                           {selectedServices.some(
                             (s) =>
                               s.toUpperCase().includes("BIWAG") ||
+                              s.toUpperCase().includes("BIUAG") ||
                               s.toUpperCase().includes("MALANA"),
                           ) && (
                             <div className="bg-indigo-500/10 border border-indigo-500/20 text-indigo-200 px-3 py-2.5 rounded-lg space-y-1">
@@ -2036,6 +2038,7 @@ export const RFIDScannerSim = ({
                         selectedServices.some(
                           (s) =>
                             s.toUpperCase().includes("BIWAG") ||
+                            s.toUpperCase().includes("BIUAG") ||
                             s.toUpperCase().includes("MALANA"),
                         )) && (
                         <div className="space-y-2 border-t border-slate-800/85 pt-3 animate-in fade-in duration-200">

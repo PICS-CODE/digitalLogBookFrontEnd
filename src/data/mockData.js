@@ -56,8 +56,8 @@ export const SERVICE_OPTIONS = [
     color: "rose",
   },
   {
-    id: "biwag",
-    name: "Discussion Room 1 (BIWAG)",
+    id: "biuag",
+    name: "Discussion Room 1 (BIUAG)",
     icon: "Library",
     description:
       "Collaborative discussion chamber. Restricted to 1 hour max stay.",
@@ -73,7 +73,7 @@ export const SERVICE_OPTIONS = [
   },
   {
     id: "intern_auto",
-    name: "Intern Auto Log",
+    name: "Digital Transportation Center",
     icon: "Activity",
     description:
       "Automatic logbook system check-in for registered LRC interns.",
@@ -379,7 +379,7 @@ export const INITIAL_LOGS = [
     rfid: "1092837465",
     userFullName: "Juan Santos Dela Cruz",
     patronType: "Student",
-    services: ["Wi-Fi Voucher", "Discussion Room 1 (BIWAG)"],
+    services: ["Wi-Fi Voucher", "Discussion Room 1 (BIUAG)"],
     checkInTime: "2026-05-23T08:10:00Z",
     status: "ACTIVE",
   },
