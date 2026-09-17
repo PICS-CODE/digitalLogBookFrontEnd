@@ -19,7 +19,9 @@ import {
   Hash,
   Activity,
   HelpCircle,
+  QrCode,
   Camera,
+  Upload,
   Sparkles,
   RefreshCw,
   X,
@@ -90,13 +92,14 @@ export const RFIDScannerSim = ({
   const latestHandleScanRef = React.useRef(null);
   // Real-time ticker state
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [scanMethod, setScanMethod] = useState(onlyQrMode ? "WEBCAM" : initialScanMethod);
+  const [scanMethod, setScanMethod] = useState(initialScanMethod); // "RFID" | "WEBCAM" | "UPLOAD" | "SIM_DROP"
   const quotaResetMs = 12 * 60 * 60 * 1000;
 
   useEffect(() => {
-    setScanMethod(onlyQrMode ? "WEBCAM" : initialScanMethod);
-  }, [initialScanMethod, onlyQrMode]);
+    setScanMethod(initialScanMethod);
+  }, [initialScanMethod]);
   const videoRef = React.useRef(null);
+  const canvasRef = React.useRef(null);
   const streamRef = React.useRef(null);
   const cameraRequestRef = React.useRef(0);
   const [webcamError, setWebcamError] = useState("");
@@ -105,6 +108,9 @@ export const RFIDScannerSim = ({
   const [cameraFacingMode, setCameraFacingMode] = useState("environment");
   const [cameraDevices, setCameraDevices] = useState([]);
   
+  // Quick QR Code Generator dropdown helpers
+  const [simSelectedUser, setSimSelectedUser] = useState("");
+  const [simQrUrl, setSimQrUrl] = useState("");
   const [registrationQrUrl, setRegistrationQrUrl] = useState("");
   const [showQrRegistrationModal, setShowQrRegistrationModal] = useState(false);
 
@@ -122,6 +128,32 @@ export const RFIDScannerSim = ({
       .then((url) => setRegistrationQrUrl(url))
       .catch((err) => console.error("Error generating registration QR URL", err));
   }, []);
+
+  const allAvailableUsers = [...users, ...(qrClients || [])];
+
+  // Populate first available user on load
+  useEffect(() => {
+    if (allAvailableUsers && allAvailableUsers.length > 0 && !simSelectedUser) {
+      setSimSelectedUser(allAvailableUsers[0].id);
+    }
+  }, [allAvailableUsers, simSelectedUser]);
+
+  // Generate QR code for simulated drop-down scanning
+  useEffect(() => {
+    const matched = allAvailableUsers.find((u) => u.id === simSelectedUser);
+    if (matched) {
+      QRCode.toDataURL(matched.rfid, {
+        width: 140,
+        margin: 1,
+        color: {
+          dark: "#0F172A",
+          light: "#FFFFFF",
+        },
+      })
+        .then((url) => setSimQrUrl(url))
+        .catch((e) => console.error(e));
+    }
+  }, [simSelectedUser, allAvailableUsers]);
 
   // Clean up streams
   useEffect(() => {
@@ -195,7 +227,7 @@ export const RFIDScannerSim = ({
         setCameraNotice("Front camera is not available on this device. Keeping the back camera active.");
       } else {
         setWebcamError(
-          "Standard webcam hardware access was blocked or is unavailable. Please check camera permissions and try again."
+          "Standard webcam hardware access was blocked or is unavailable. Please choose from the 'Simulate Dropdown' or 'Upload Image' tabs below!"
         );
       }
     }
@@ -280,6 +312,34 @@ export const RFIDScannerSim = ({
     } catch (_) {}
   };
 
+  const handleQrFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        
+        const code = jsQR(imageData.data, imageData.width, imageData.height);
+        if (code) {
+          playScanBeep();
+          handleScan(code.data.trim());
+        } else {
+          alert("Could not decode any valid QR access token. Please upload a clear photo of the check-in QR Code.");
+        }
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
   const isWithinQuotaWindow = (checkInTime) => {
     const checkInMs = new Date(checkInTime).getTime();
     if (Number.isNaN(checkInMs)) return false;
@@ -333,17 +393,22 @@ export const RFIDScannerSim = ({
   };
 
   // Location select state (dynamic terminal location preset)
-  const [terminalLocation, setTerminalLocation] = useState("1F WALK-IN RECEPTION");
-  const [pendingAreaSelection, setPendingAreaSelection] = useState(null);
+  const [terminalLocation, setTerminalLocation] = useState(initialTerminalLocation);
+  const [isChoosingLocation, setIsChoosingLocation] = useState(false);
 
   useEffect(() => {
-    setTerminalLocation("1F WALK-IN RECEPTION");
+    setTerminalLocation(initialTerminalLocation);
   }, [initialTerminalLocation]);
 
-  const floorAreaOptions = {
-    "1ST FLOOR": ["UBAG CINEMA", "PLAY AREA", "PVAO AREA", "PWD AREA", "READING AREA"],
-    "3RD FLOOR": ["READING AREA", "INTERNET AREA", "MULTIMEDIA ROOM"],
-  };
+  const locations = [
+    "1F WALK-IN RECEPTION",
+    "CPLRC SUB",
+    "2F STUDY & DISCUSSION",
+    "3F CO-WORKING ZONE",
+    "4F QUIET STUDY HUB",
+    "DIGITAL TRANSPORTATION CENTER",
+    "PRINTING SECTOR",
+  ];
 
   const getServicesForLocation = (location) => {
     // QR scanners are entrance checkpoints, not service-selection terminals.
@@ -356,7 +421,7 @@ export const RFIDScannerSim = ({
           { id: "qr_4f", name: "4th Floor", icon: "Library", description: "QR entrance assignment for the 4th Floor.", color: "sky" },
         ];
       }
-      const isInternetArea = location === "INTERNET AREA";
+      const isInternetArea = location === "INTERNET AREA" || location === "PRINTING SECTOR";
       return [
         {
           id: isInternetArea ? "entrance_auto_enter" : "entrance",
@@ -520,6 +585,17 @@ export const RFIDScannerSim = ({
             color: "amber",
           },
         ];
+      case "DIGITAL TRANSPORTATION CENTER":
+        return [
+          {
+            id: "intern_auto",
+            name: "Digital Transportation Center",
+            icon: "Activity",
+            description: "Automatic logbook log-in for active CPLRC Interns.",
+            color: "emerald",
+          },
+        ];
+      case "PRINTING SECTOR":
       default:
         return [
           {
@@ -648,6 +724,30 @@ export const RFIDScannerSim = ({
       setScannerState("SCANNED");
       playScanBeep();
       return;
+    }
+
+    // Intern Auto-Deck remains an automatic check-in terminal.
+    if (terminalLocation === "DIGITAL TRANSPORTATION CENTER") {
+      const checkInTime = new Date().toISOString();
+
+      onAddLog({
+        id: `log-auto-${Date.now()}`,
+        rfid: matchedUser.rfid,
+        userFullName: `${matchedUser.givenName} ${matchedUser.middleName ? matchedUser.middleName + " " : ""}${matchedUser.lastName}`,
+        patronType: matchedUser.patronType,
+        services: ["Digital Transportation Center"],
+        terminalLocation,
+        entryType: onlyQrMode ? "QR_CODE_ENTRANCE" : "RFID_CHECK_IN",
+        checkInTime,
+        status: "ACTIVE",
+      });
+      setSuccessInfo({
+        title: "INTERN LOG-IN SUCCESSFUL!",
+        subtitle: `Welcome, ${matchedUser.givenName}! Your entry has been recorded successfully.`,
+        type: "in",
+      });
+      setScannerState("SUCCESS_MESSAGE");
+      return; // End the function here for auto-check-in terminals
     }
 
     // Check if user has an active log record in progress
@@ -1128,7 +1228,43 @@ export const RFIDScannerSim = ({
         <span>{terminalLocation}</span>
         <span className="font-mono text-amber-300">✦</span>
 
-        </div>
+        {/* Dynamic Station Location Selector helper */}
+        <button
+          onClick={() => setIsChoosingLocation(!isChoosingLocation)}
+          className="sm:absolute sm:right-4 text-[10px] font-mono bg-sky-655 text-sky-100 hover:text-white hover:bg-sky-700 px-2 py-1 rounded transition-all border border-sky-400 font-bold uppercase cursor-pointer"
+        >
+          {isChoosingLocation ? "✕ CLOSE SELECTOR" : "⚙ SWITCH OVER"}
+        </button>
+      </div>
+
+      {/* Location Selector Slide Down menu */}
+      <AnimatePresence>
+        {isChoosingLocation && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="bg-slate-900 border-b border-slate-800 p-3 flex flex-wrap gap-2 justify-center z-20 relative overflow-hidden"
+          >
+            {locations.map((loc) => (
+              <button
+                key={loc}
+                onClick={() => {
+                  setTerminalLocation(loc);
+                  setIsChoosingLocation(false);
+                }}
+                className={`px-3 py-1 text-[10px] font-mono rounded cursor-pointer transition-all uppercase font-bold ${
+                  terminalLocation === loc
+                    ? "bg-amber-400 text-slate-950 shadow"
+                    : "bg-slate-955 text-slate-400 hover:bg-slate-800 hover:text-white border border-slate-800"
+                }`}
+              >
+                {loc}
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="flex flex-col lg:flex-row items-stretch gap-6 mt-6">
         {/* ========================================================= */}
@@ -1675,7 +1811,7 @@ export const RFIDScannerSim = ({
                           ) && (
                             <div className="bg-rose-500/10 border border-rose-500/20 text-rose-200 px-3 py-2.5 rounded-lg space-y-1.5">
                               <div className="flex justify-between items-center text-[9.5px] font-mono font-black uppercase tracking-wider">
-                                <span>🖨️ PRINTING REGULATIONS</span>
+                                <span>🖨️ PRINTING SECTOR REGULATIONS</span>
                                 <span className="text-[8.5px] bg-rose-550 text-white px-1 py-0.5 rounded font-sans font-black font-extrabold">
                                   MAX 10 PAGES
                                 </span>
@@ -1765,7 +1901,7 @@ export const RFIDScannerSim = ({
                           {[
                             {
                               id: "1f",
-                              label: "1ST FLOOR",
+                              label: "1st Floor",
                               desc: "General & Study Lounge",
                               location: "1F WALK-IN RECEPTION",
                               defaultServiceId: "qr_1f",
@@ -1773,60 +1909,59 @@ export const RFIDScannerSim = ({
                             },
                             {
                               id: "2f",
-                              label: "2ND FLOOR",
-                              desc: "Study & Discussion",
+                              label: "2nd Floor",
+                              desc: "Discussion & Study Hall",
                               location: "2F STUDY & DISCUSSION",
                               defaultServiceId: "entrance",
                               defaultServiceName: "Entrance",
                             },
                             {
                               id: "3f",
-                              label: "3RD FLOOR",
-                              desc: "Co-Working Zone",
+                              label: "3rd Floor",
+                              desc: "Collaborative Workspace",
                               location: "3F CO-WORKING ZONE",
                               defaultServiceId: "entrance",
                               defaultServiceName: "Entrance",
                             },
                             {
                               id: "4f",
-                              label: "4TH FLOOR",
-                              desc: "Quiet Study Hub",
+                              label: "4th Floor",
+                              desc: "Quiet Reader Sanctuary",
                               location: "4F QUIET STUDY HUB",
                               defaultServiceId: "entrance",
                               defaultServiceName: "Entrance",
                             },
                             {
                               id: "internet",
-                              label: "INTERNET AREA",
-                              desc: "Internet access / PC terminals",
+                              label: "Internet Area",
+                              desc: "PC Terminals & Printing Hub",
                               location: "INTERNET AREA",
                               defaultServiceId: "entrance_auto_enter",
                               defaultServiceName: "Entrance (Auto Enter)",
                             },
                             {
                               id: "wifi-voucher",
-                              label: "WI-FI VOUCHER",
-                              desc: "Wi-Fi voucher service",
-                              location: "1F WALK-IN RECEPTION",
+                              label: "Wi-Fi Voucher",
+                              desc: "One voucher per guest within the quota period.",
+                              location: "PRINTING SECTOR",
                               defaultServiceId: "wifi",
                               defaultServiceName: "Wi-Fi Voucher",
                             },
+                            {
+                              id: "cplrc-sub",
+                              label: "CPLRC SUB",
+                              desc: "CPLRC SUB QR Scanner",
+                              location: "CPLRC SUB",
+                              defaultServiceId: "entrance",
+                              defaultServiceName: "Entrance",
+                            },
                           ].map((floor) => {
                             const isSelected = terminalLocation === floor.location;
-                            const requiresAreaModal = floor.label === "1ST FLOOR" || floor.label === "3RD FLOOR";
                             return (
                               <button
                                 key={floor.id}
                                 type="button"
                                 onClick={() => {
-                                  if (requiresAreaModal) {
-                                    setPendingAreaSelection({
-                                      title: `SELECT ${floor.label.replace("ST", "ST").replace("RD", "RD")} AREA`,
-                                      location: floor.location,
-                                      options: floorAreaOptions[floor.label] || [],
-                                    });
-                                    return;
-                                  }
                                   handleCheckIn(floor.location, [floor.defaultServiceName]);
                                 }}
                                 className={`flex flex-col items-start p-2.5 rounded-lg text-left transition-all border cursor-pointer ${
@@ -1950,7 +2085,7 @@ export const RFIDScannerSim = ({
                           ) && (
                             <div className="bg-rose-500/15 border border-rose-500/25 text-rose-200 px-3 py-2.5 rounded-lg space-y-1.5">
                               <div className="flex justify-between items-center text-[9.5px] font-mono font-black uppercase tracking-wider">
-                                <span>🖨️ PRINTING REGULATIONS</span>
+                                <span>🖨️ PRINTING SECTOR REGULATIONS</span>
                                 <span className="text-[8.5px] bg-rose-550 text-white px-1 py-0.5 rounded font-sans font-black font-extrabold">
                                   MAX 10 PAGES
                                 </span>
@@ -2148,6 +2283,34 @@ export const RFIDScannerSim = ({
                 }`}
               >
                 <Camera size={10} /> Live QR Cam
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  stopWebcam();
+                  setScanMethod("UPLOAD");
+                }}
+                className={`flex-1 py-1.5 rounded uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                  scanMethod === "UPLOAD"
+                    ? "bg-sky-500 text-slate-950 font-black shadow"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                <Upload size={10} /> QR File
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  stopWebcam();
+                  setScanMethod("SIM_DROP");
+                }}
+                className={`flex-1 py-1.5 rounded uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                  scanMethod === "SIM_DROP"
+                    ? "bg-purple-600 text-white font-black shadow"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                ⚡ Sim Pass
               </button>
             </div>
 
@@ -2359,45 +2522,102 @@ export const RFIDScannerSim = ({
               </button>
             )}
 
+            {/* TAB CONTAINER: FILE UPLOAD DECODER */}
+            {scanMethod === "UPLOAD" && (
+              <div className="space-y-3">
+                <p className="text-[9.5px] text-slate-400 leading-normal font-sans">
+                  📤 Drag or browse any screenshot PNG or JPG image containing your library account QR Code to decode it inside the sandboxed reader.
+                </p>
+
+                <div className="border border-dashed border-slate-800 bg-slate-950/80 rounded-xl p-6 text-center hover:border-sky-500/50 hover:bg-slate-950 transition-all relative">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleQrFileUpload}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                  <Upload size={24} className="text-slate-500 mx-auto mb-2 animate-bounce" />
+                  <p className="text-xs font-bold text-slate-300 uppercase tracking-wide">
+                    Browse QR Card Image
+                  </p>
+                  <p className="text-[10px] text-slate-500 mt-1 leading-normal">
+                    Click here to select your saved membership pass file.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* TAB CONTAINER: DYNAMIC DROP-DOWN DUAL DESKTOP PREVIEW SIMULATION */}
+            {scanMethod === "SIM_DROP" && (
+              <div className="space-y-3 bg-slate-950 p-3 rounded-xl border border-slate-850">
+                <p className="text-[9.5px] text-slate-400 leading-normal">
+                  💡 Choose a registered member's identity profile below to generate their dynamic QR Code. Click the scan button to instant-simulate a scanner tap. Excellent for quick testing or webcam-less terminals!
+                </p>
+
+                <div>
+                  <label className="text-[8px] font-mono font-bold text-slate-500 block mb-1 uppercase">
+                    Select Test Subject:
+                  </label>
+                  <select
+                    value={simSelectedUser}
+                    onChange={(e) => setSimSelectedUser(e.target.value)}
+                    className="w-full bg-slate-900 text-slate-200 border border-slate-800 rounded px-2.5 py-1.5 text-[10px] font-bold"
+                  >
+                    {allAvailableUsers.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.givenName} {u.lastName} ({u.rfid})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {simQrUrl && (
+                  <div className="flex items-center gap-4 bg-slate-900 p-2.5 rounded-lg border border-slate-850">
+                    <div className="p-1.5 bg-white rounded-lg shrink-0">
+                      <img src={simQrUrl} alt="Simulated member scan QR" className="w-20 h-20" />
+                    </div>
+                    <div className="flex-1 space-y-2">
+                      <div className="text-[10px] font-mono">
+                        <span className="text-slate-500 block">{onlyQrMode ? "QR PASS DECODE:" : "CARD ID HEX:"}</span>
+                        <span className="text-amber-400 font-extrabold pb-1 border-b border-slate-800 block">
+                          {allAvailableUsers.find((u) => u.id === simSelectedUser)?.rfid}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const matched = allAvailableUsers.find((u) => u.id === simSelectedUser);
+                          if (matched) {
+                            playScanBeep();
+                            handleScan(matched.rfid);
+                          }
+                        }}
+                        className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-[9.5px] font-mono font-black uppercase rounded tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1 w-full"
+                      >
+                        ⚡ Scan This Member QR
+                      </button>
+                      
+                      <button
+                        type="button"
+                        onClick={() => {
+                          playScanBeep();
+                          handleScan("REGISTRATION_QR");
+                        }}
+                        className="px-3 py-1.5 bg-cyan-700/80 hover:bg-cyan-700 text-white text-[9px] font-mono font-bold uppercase rounded tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1 w-full border border-cyan-500/20"
+                        title="Simulate scanning the QR Code for registration"
+                      >
+                        📷 Scan Registration QR
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
           </div>
           )}
         </div>
       </div>
-
-      {pendingAreaSelection && (
-        <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-            <div className="bg-slate-950 px-4 py-3 border-b border-slate-800">
-              <h3 className="text-sm font-black uppercase tracking-wider text-cyan-300">
-                {pendingAreaSelection.title}
-              </h3>
-            </div>
-            <div className="p-4 space-y-3">
-              {pendingAreaSelection.options.map((area) => (
-                <button
-                  key={area}
-                  type="button"
-                  onClick={() => {
-                    setSelectedServices([area]);
-                    setPendingAreaSelection(null);
-                    handleCheckIn(pendingAreaSelection.location, [area]);
-                  }}
-                  className="w-full text-left px-3 py-2.5 rounded-lg border border-slate-800 bg-slate-950 hover:border-cyan-500/40 hover:bg-cyan-500/5 text-slate-200 font-bold uppercase tracking-wide text-[10px] transition-all cursor-pointer"
-                >
-                  {area}
-                </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => setPendingAreaSelection(null)}
-                className="w-full mt-2 px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* QR Registration Modal */}
       {showQrRegistrationModal && (

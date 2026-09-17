@@ -1,0 +1,171 @@
+[1mdiff --git a/src/components/RFIDScannerSim.jsx b/src/components/RFIDScannerSim.jsx[m
+[1mindex 398512d..e56c06c 100644[m
+[1m--- a/src/components/RFIDScannerSim.jsx[m
+[1m+++ b/src/components/RFIDScannerSim.jsx[m
+[36m@@ -19,7 +19,9 @@[m [mimport {[m
+   Hash,[m
+   Activity,[m
+   HelpCircle,[m
+[32m+[m[32m  QrCode,[m
+   Camera,[m
+[32m+[m[32m  Upload,[m
+   Sparkles,[m
+   RefreshCw,[m
+   X,[m
+[36m@@ -90,13 +92,14 @@[m [mexport const RFIDScannerSim = ({[m
+   const latestHandleScanRef = React.useRef(null);[m
+   // Real-time ticker state[m
+   const [currentTime, setCurrentTime] = useState(new Date());[m
+[31m-  const [scanMethod, setScanMethod] = useState(onlyQrMode ? "WEBCAM" : initialScanMethod);[m
+[32m+[m[32m  const [scanMethod, setScanMethod] = useState(initialScanMethod); // "RFID" | "WEBCAM" | "UPLOAD" | "SIM_DROP"[m
+   const quotaResetMs = 12 * 60 * 60 * 1000;[m
+ [m
+   useEffect(() => {[m
+[31m-    setScanMethod(onlyQrMode ? "WEBCAM" : initialScanMethod);[m
+[31m-  }, [initialScanMethod, onlyQrMode]);[m
+[32m+[m[32m    setScanMethod(initialScanMethod);[m
+[32m+[m[32m  }, [initialScanMethod]);[m
+   const videoRef = React.useRef(null);[m
+[32m+[m[32m  const canvasRef = React.useRef(null);[m
+   const streamRef = React.useRef(null);[m
+   const cameraRequestRef = React.useRef(0);[m
+   const [webcamError, setWebcamError] = useState("");[m
+[36m@@ -105,6 +108,9 @@[m [mexport const RFIDScannerSim = ({[m
+   const [cameraFacingMode, setCameraFacingMode] = useState("environment");[m
+   const [cameraDevices, setCameraDevices] = useState([]);[m
+   [m
+[32m+[m[32m  // Quick QR Code Generator dropdown helpers[m
+[32m+[m[32m  const [simSelectedUser, setSimSelectedUser] = useState("");[m
+[32m+[m[32m  const [simQrUrl, setSimQrUrl] = useState("");[m
+   const [registrationQrUrl, setRegistrationQrUrl] = useState("");[m
+   const [showQrRegistrationModal, setShowQrRegistrationModal] = useState(false);[m
+ [m
+[36m@@ -123,6 +129,32 @@[m [mexport const RFIDScannerSim = ({[m
+       .catch((err) => console.error("Error generating registration QR URL", err));[m
+   }, []);[m
+ [m
+[32m+[m[32m  const allAvailableUsers = [...users, ...(qrClients || [])];[m
+[32m+[m
+[32m+[m[32m  // Populate first available user on load[m
+[32m+[m[32m  useEffect(() => {[m
+[32m+[m[32m    if (allAvailableUsers && allAvailableUsers.length > 0 && !simSelectedUser) {[m
+[32m+[m[32m      setSimSelectedUser(allAvailableUsers[0].id);[m
+[32m+[m[32m    }[m
+[32m+[m[32m  }, [allAvailableUsers, simSelectedUser]);[m
+[32m+[m
+[32m+[m[32m  // Generate QR code for simulated drop-down scanning[m
+[32m+[m[32m  useEffect(() => {[m
+[32m+[m[32m    const matched = allAvailableUsers.find((u) => u.id === simSelectedUser);[m
+[32m+[m[32m    if (matched) {[m
+[32m+[m[32m      QRCode.toDataURL(matched.rfid, {[m
+[32m+[m[32m        width: 140,[m
+[32m+[m[32m        margin: 1,[m
+[32m+[m[32m        color: {[m
+[32m+[m[32m          dark: "#0F172A",[m
+[32m+[m[32m          light: "#FFFFFF",[m
+[32m+[m[32m        },[m
+[32m+[m[32m      })[m
+[32m+[m[32m        .then((url) => setSimQrUrl(url))[m
+[32m+[m[32m        .catch((e) => console.error(e));[m
+[32m+[m[32m    }[m
+[32m+[m[32m  }, [simSelectedUser, allAvailableUsers]);[m
+[32m+[m
+   // Clean up streams[m
+   useEffect(() => {[m
+     return () => {[m
+[36m@@ -195,7 +227,7 @@[m [mexport const RFIDScannerSim = ({[m
+         setCameraNotice("Front camera is not available on this device. Keeping the back camera active.");[m
+       } else {[m
+         setWebcamError([m
+[31m-          "Standard webcam hardware access was blocked or is unavailable. Please check camera permissions and try again."[m
+[32m+[m[32m          "Standard webcam hardware access was blocked or is unavailable. Please choose from the 'Simulate Dropdown' or 'Upload Image' tabs below!"[m
+         );[m
+       }[m
+     }[m
+[36m@@ -280,6 +312,34 @@[m [mexport const RFIDScannerSim = ({[m
+     } catch (_) {}[m
+   };[m
+ [m
+[32m+[m[32m  const handleQrFileUpload = (e) => {[m
+[32m+[m[32m    const file = e.target.files?.[0];[m
+[32m+[m[32m    if (!file) return;[m
+[32m+[m
+[32m+[m[32m    const reader = new FileReader();[m
+[32m+[m[32m    reader.onload = (event) => {[m
+[32m+[m[32m      const img = new Image();[m
+[32m+[m[32m      img.onload = () => {[m
+[32m+[m[32m        const canvas = document.createElement("canvas");[m
+[32m+[m[32m        canvas.width = img.width;[m
+[32m+[m[32m        canvas.height = img.height;[m
+[32m+[m[32m        const ctx = canvas.getContext("2d");[m
+[32m+[m[32m        ctx.drawImage(img, 0, 0);[m
+[32m+[m[32m        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);[m
+[32m+[m[41m        [m
+[32m+[m[32m        const code = jsQR(imageData.data, imageData.width, imageData.height);[m
+[32m+[m[32m        if (code) {[m
+[32m+[m[32m          playScanBeep();[m
+[32m+[m[32m          handleScan(code.data.trim());[m
+[32m+[m[32m        } else {[m
+[32m+[m[32m          alert("Could not decode any valid QR access token. Please upload a clear photo of the check-in QR Code.");[m
+[32m+[m[32m        }[m
+[32m+[m[32m      };[m
+[32m+[m[32m      img.src = event.target.result;[m
+[32m+[m[32m    };[m
+[32m+[m[32m    reader.readAsDataURL(file);[m
+[32m+[m[32m  };[m
+[32m+[m
+   const isWithinQuotaWindow = (checkInTime) => {[m
+     const checkInMs = new Date(checkInTime).getTime();[m
+     if (Number.isNaN(checkInMs)) return false;[m
+[36m@@ -333,17 +393,22 @@[m [mexport const RFIDScannerSim = ({[m
+   };[m
+ [m
+   // Location select state (dynamic terminal location preset)[m
+[31m-  const [terminalLocation, setTerminalLocation] = useState("1F WALK-IN RECEPTION");[m
+[31m-  const [pendingAreaSelection, setPendingAreaSelection] = useState(null);[m
+[32m+[m[32m  const [terminalLocation, setTerminalLocation] = useState(initialTerminalLocation);[m
+[32m+[m[32m  const [isChoosingLocation, setIsChoosingLocation] = useState(false);[m
+ [m
+   useEffect(() => {[m
+[31m-    setTerminalLocation("1F WALK-IN RECEPTION");[m
+[32m+[m[32m    setTerminalLocation(initialTerminalLocation);[m
+   }, [initialTerminalLocation]);[m
+ [m
+[31m-  const floorAreaOptions = {[m
+[31m-    "1ST FLOOR": ["UBAG CINEMA", "PLAY AREA", "PVAO AREA", "PWD AREA", "READING AREA"],[m
+[31m-    "3RD FLOOR": ["READING AREA", "INTERNET AREA", "MULTIMEDIA ROOM"],[m
+[31m-  };[m
+[32m+[m[32m  const locations = [[m
+[32m+[m[32m    "1F WALK-IN RECEPTION",[m
+[32m+[m[32m    "CPLRC SUB",[m
+[32m+[m[32m    "2F STUDY & DISCUSSION",[m
+[32m+[m[32m    "3F CO-WORKING ZONE",[m
+[32m+[m[32m    "4F QUIET STUDY HUB",[m
+[32m+[m[32m    "DIGITAL TRANSPORTATION CENTER",[m
+[32m+[m[32m    "PRINTING SECTOR",[m
+[32m+[m[32m  ];[m
+ [m
+   const getServicesForLocation = (location) => {[m
+     // QR scanners are entrance checkpoints, not service-selection terminals.[m
+[36m@@ -356,7 +421,7 @@[m [mexport const RFIDScannerSim = ({[m
+           { id: "qr_4f", name: "4th Floor", icon: "Library", description: "QR entrance assignment for the 4th Floor.", color: "sky" },[m
+         ];[m
+       }[m
+[31m-      const isInternetArea = location === "INTERNET AREA";[m
+[32m+[m[32m      const isInternetArea = location === "INTERNET AREA" || location === "PRINTING SECTOR";[m
+       return [[m
+         {[m
+           id: isInternetArea ? "entrance_auto_enter" : "entrance",[m
+[36m@@ -520,6 +585,17 @@[m [mexport const RFIDScannerSim = ({[m
+             color: "amber",[m
+           },[m
+         ];[m
+[32m+[m[32m      case "DIGITAL TRANSPORTATION CENTER":[m
+[32m+[m[32m        return [[m
+[32m+[m[32m          {[m
+[32m+[m[32m            id: "intern_auto",[m
+[32m+[m[32m            name: "Digital Transportation Center",[m
+[32m+[m[32m            icon: "Activity",[m
+[32m+[m[32m            description: "Automatic logbook log-in for active CPLRC Interns.",[m
+[32m+[m[32m            color: "emerald",[m
+[32m+[m[32m        
