@@ -101,8 +101,12 @@ export const RFIDScannerSim = ({
   const videoRef = React.useRef(null);
   const canvasRef = React.useRef(null);
   const streamRef = React.useRef(null);
+  const cameraRequestRef = React.useRef(0);
   const [webcamError, setWebcamError] = useState("");
+  const [cameraNotice, setCameraNotice] = useState("");
   const [webcamScanning, setWebcamScanning] = useState(false);
+  const [cameraFacingMode, setCameraFacingMode] = useState("environment");
+  const [cameraDevices, setCameraDevices] = useState([]);
   
   // Quick QR Code Generator dropdown helpers
   const [simSelectedUser, setSimSelectedUser] = useState("");
@@ -158,8 +162,23 @@ export const RFIDScannerSim = ({
     };
   }, []);
 
-  const startWebcam = async () => {
+  const stopWebcamStream = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.srcObject = null;
+    }
+  };
+
+  const startWebcam = async (requestedFacingMode = cameraFacingMode) => {
+    const requestId = ++cameraRequestRef.current;
     setWebcamError("");
+    setCameraNotice("");
+    setWebcamScanning(false);
+    stopWebcamStream();
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setWebcamError(
         "Webcam access is not available on your browser or device. This feature requires a secure connection (HTTPS) and browser support.",
@@ -169,8 +188,15 @@ export const RFIDScannerSim = ({
     }
 
     try {
-      const constraints = { video: { facingMode: "environment" } };
+      const constraints = {
+        video: { facingMode: { ideal: requestedFacingMode } },
+        audio: false,
+      };
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      if (requestId !== cameraRequestRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -181,25 +207,42 @@ export const RFIDScannerSim = ({
             console.warn("Webcam play interrupted safely:", err.message);
           });
         }
+        setCameraFacingMode(requestedFacingMode);
         setWebcamScanning(true);
+
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          if (requestId === cameraRequestRef.current) {
+            setCameraDevices(devices.filter((device) => device.kind === "videoinput"));
+          }
+        } catch (error) {
+          console.warn("Unable to enumerate cameras.", error);
+        }
       }
     } catch (err) {
       console.error("Camera setup failed", err);
-      setWebcamError(
-        "Standard webcam hardware access was blocked or is unavailable. Please choose from the 'Simulate Dropdown' or 'Upload Image' tabs below!"
-      );
+      if (requestedFacingMode === "user") {
+        setCameraFacingMode("environment");
+        await startWebcam("environment");
+        setCameraNotice("Front camera is not available on this device. Keeping the back camera active.");
+      } else {
+        setWebcamError(
+          "Standard webcam hardware access was blocked or is unavailable. Please choose from the 'Simulate Dropdown' or 'Upload Image' tabs below!"
+        );
+      }
     }
   };
 
   const stopWebcam = () => {
+    cameraRequestRef.current += 1;
     setWebcamScanning(false);
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
+    stopWebcamStream();
+  };
+
+  const switchCamera = async () => {
+    if (cameraDevices.length < 2) return;
+    const nextFacingMode = cameraFacingMode === "environment" ? "user" : "environment";
+    await startWebcam(nextFacingMode);
   };
 
   // Automatically start or stop camera on mode change
@@ -2229,7 +2272,6 @@ export const RFIDScannerSim = ({
                 type="button"
                 onClick={() => {
                   setScanMethod("WEBCAM");
-                  startWebcam();
                 }}
                 className={`flex-1 py-1.5 rounded uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1 ${
                   scanMethod === "WEBCAM"
@@ -2425,6 +2467,11 @@ export const RFIDScannerSim = ({
                           CAMERA_FEED_LIVE
                         </div>
                       )}
+                      {cameraNotice && (
+                        <div className="absolute bottom-2 left-2 right-2 rounded bg-slate-950/85 px-2 py-1 text-center text-[8px] font-mono text-amber-300">
+                          {cameraNotice}
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
@@ -2447,6 +2494,17 @@ export const RFIDScannerSim = ({
                   >
                     {webcamScanning ? "✕ Deactivate Camera" : "▶ Start Webcam Stream"}
                   </button>
+                  {cameraDevices.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={switchCamera}
+                      disabled={!webcamScanning}
+                      className="shrink-0 rounded bg-slate-700 px-3 py-1.5 text-[10px] font-mono font-black uppercase text-white transition-all hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <RefreshCw size={12} className="mr-1 inline-block" />
+                      Switch Camera
+                    </button>
+                  )}
                 </div>
               </div>
             )}
