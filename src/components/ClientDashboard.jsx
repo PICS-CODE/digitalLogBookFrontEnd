@@ -695,10 +695,10 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
           {activeTab === "information" && (
             <div className="space-y-6">
               {/* SIDE-BY-SIDE ACCESS CARD AND PASSCODE PREVIEWS */}
-              <div className="flex flex-col xl:flex-row items-center xl:items-stretch justify-center gap-6">
+              <div className="flex w-full min-w-0 flex-col xl:flex-row items-center xl:items-stretch justify-center gap-6">
                 
                 {/* ACCORDION/PREVIEW: THE HIGH-FIDELITY OFFICIAL ACCREDITED PLRC ACCESS CARD */}
-                <div className="relative w-full max-w-[580px] min-h-[360px] sm:min-h-0 sm:aspect-[1.58/1] bg-white rounded-2xl shadow-xl border border-slate-300/80 overflow-hidden flex flex-col p-2 sm:p-4 select-none text-slate-900 transition-transform duration-300 hover:scale-[1.01]">
+                <div className="relative w-full min-w-0 max-w-[580px] aspect-[1.58/1] min-h-0 bg-white rounded-2xl shadow-xl border border-slate-300/80 overflow-hidden flex flex-col p-2 sm:p-4 select-none text-slate-900 transition-transform duration-300 sm:hover:scale-[1.01]">
                   {/* ID Background Image */}
                   <img 
                     src="/images/id-card.png" 
@@ -714,7 +714,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
                   </div>
 
                   {/* Header labels with seals flanking */}
-                  <div className="flex items-center justify-between border-b border-blue-100 pb-2 mb-2 bg-transparent relative z-20">
+                  <div className="flex min-w-0 items-center justify-between border-b border-blue-100 pb-2 mb-2 bg-transparent relative z-20">
                     <div className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center bg-blue-50 scale-90 border border-slate-100">
                       <img
                         src="/images/cplr.png"
@@ -723,7 +723,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
                       />
                     </div>
 
-                    <div className="text-center flex-1 px-1 select-none">
+                    <div className="text-center flex-1 min-w-0 px-1 select-none">
                       <div className="text-[7.5px] font-mono tracking-widest text-[#1E3A8A] uppercase font-bold leading-none">
                         Republic of the Philippines
                       </div>
@@ -746,9 +746,9 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
                   </div>
 
                   {/* Card Content Layout */}
-                  <div className="flex-1 flex gap-4 items-stretch overflow-hidden relative z-20">
+                  <div className="flex-1 min-h-0 flex gap-2 sm:gap-4 items-stretch relative z-20">
                     {/* Left side: Client profile photo inside exact frame */}
-                    <div className="w-16 h-20 sm:w-28 sm:h-36 md:w-32 md:h-40 aspect-[3/4] bg-slate-100 border-2 border-dashed border-slate-300 rounded-xl overflow-hidden flex flex-col items-center justify-center relative shrink-0">
+                    <div className="w-[22%] max-w-32 h-auto aspect-[3/4] bg-slate-100 border-2 border-dashed border-slate-300 rounded-xl overflow-hidden flex flex-col items-center justify-center relative shrink-0 sm:w-28 md:w-32">
                       {clientInfo.photoUrl ? (
                         <img
                           src={clientInfo.photoUrl}
@@ -767,65 +767,65 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
                     </div>
 
                     {/* Right side: Field values with actual arrows prefixed: ▶ */}
-                    <div className="flex-1 flex flex-col justify-around text-slate-800 text-[9px] sm:text-[11px] font-bold py-1 min-w-0 p-1 sm:p-2.5 rounded-xl">
+                    <div className="flex-1 min-w-0 min-h-0 flex flex-col justify-around text-slate-800 text-[clamp(7px,2.3vw,9px)] sm:text-[11px] font-bold py-1 px-0.5 sm:p-2.5 rounded-xl overflow-hidden">
                       <div className="flex items-start gap-1.5 min-w-0">
-                        <span className="text-[8px] sm:text-[15px] uppercase tracking-wider font-mono text-slate-500 w-14 sm:w-24 shrink-0">
+                        <span className="text-[clamp(6px,2vw,8px)] sm:text-[15px] uppercase tracking-wider font-mono text-slate-500 w-20 sm:w-24 shrink-0 whitespace-nowrap">
                           LAST NAME
                         </span>
-                        <div className="flex items-start gap-1 min-w-0 text-slate-950 font-black">
+                        <div className="flex flex-1 items-start gap-1 min-w-0 text-slate-950 font-black">
                           <span className="text-blue-600">▶</span>
-                          <span className="uppercase text-[9px] sm:text-[15px] tracking-wide break-words">
+                          <span className="min-w-0 uppercase text-[clamp(7px,2.3vw,9px)] sm:text-[15px] tracking-wide break-words [overflow-wrap:anywhere]">
                             {clientInfo.lastName}
                           </span>
                         </div>
                       </div>
 
                       <div className="flex items-start gap-1.5 min-w-0">
-                        <span className="text-[8px] sm:text-[15px] uppercase tracking-wider font-mono text-slate-500 w-14 sm:w-24 shrink-0">
+                        <span className="text-[clamp(6px,2vw,8px)] sm:text-[15px] uppercase tracking-wider font-mono text-slate-500 w-20 sm:w-24 shrink-0 whitespace-nowrap">
                           FIRST NAME
                         </span>
-                        <div className="flex items-start gap-1 min-w-0 text-slate-950 font-black">
+                        <div className="flex flex-1 items-start gap-1 min-w-0 text-slate-950 font-black">
                           <span className="text-blue-600">▶</span>
-                          <span className="uppercase text-[9px] sm:text-[15px] tracking-wide break-words">
+                          <span className="min-w-0 uppercase text-[clamp(7px,2.3vw,9px)] sm:text-[15px] tracking-wide break-words [overflow-wrap:anywhere]">
                             {clientInfo.givenName}
                           </span>
                         </div>
                       </div>
 
                       <div className="flex items-start gap-1 min-w-0">
-                        <span className="text-[8px] sm:text-[15px] uppercase tracking-wider font-mono text-slate-500 w-14 sm:w-24 shrink-0">
+                        <span className="text-[clamp(6px,2vw,8px)] sm:text-[15px] uppercase tracking-wider font-mono text-slate-500 w-20 sm:w-24 shrink-0 whitespace-nowrap">
                           MIDDLE NAME
                         </span>
-                        <div className="flex items-start gap-1.5 min-w-0 text-slate-950 font-black">
+                        <div className="flex flex-1 items-start gap-1.5 min-w-0 text-slate-950 font-black">
                           <span className="text-blue-600">▶</span>
-                          <span className="uppercase text-[9px] sm:text-[15px] tracking-wide break-words">
+                          <span className="min-w-0 uppercase text-[clamp(7px,2.3vw,9px)] sm:text-[15px] tracking-wide break-words [overflow-wrap:anywhere]">
                             {clientInfo.middleName || "N/A"}
                           </span>
                         </div>
                       </div>
 
                       <div className="flex items-start gap-1.5 min-w-0">
-                        <span className="text-[8px] sm:text-[15px] uppercase tracking-wider font-mono text-slate-500 w-14 sm:w-24 shrink-0">
+                        <span className="text-[clamp(6px,2vw,8px)] sm:text-[15px] uppercase tracking-wider font-mono text-slate-500 w-20 sm:w-24 shrink-0 whitespace-nowrap">
                           BIRTHDAY
                         </span>
-                        <div className="flex items-start gap-1 min-w-0 text-slate-950 font-bold">
+                        <div className="flex flex-1 items-start gap-1 min-w-0 text-slate-950 font-bold">
                           <span className="text-blue-600">▶</span>
-                          <span className="uppercase text-[9px] sm:text-[15px] tracking-wide break-words">
+                          <span className="min-w-0 uppercase text-[clamp(7px,2.3vw,9px)] sm:text-[15px] tracking-wide break-words [overflow-wrap:anywhere]">
                             {clientInfo.birthday || "YYYY-MM-DD"}
                           </span>
                         </div>
                       </div>
 
-                      <div className="flex items-start gap-1.5 min-w-0">
-                       <div className="flex flex-col">
-                          <span className="text-[9px] sm:text-[15px] uppercase tracking-wider font-mono text-slate-500">
+                       <div className="flex items-start gap-1.5 min-w-0">
+                        <div className="flex min-w-0 flex-1 flex-col">
+                          <span className="text-[clamp(6px,2vw,9px)] sm:text-[15px] uppercase tracking-wider font-mono text-slate-500">
                             ADDRESS 
                           </span>
 
                           <div className="flex items-start gap-1 min-w-0 text-slate-950 font-medium">
                             <span className="text-blue-600">▶</span>
 
-                            <span className="uppercase tracking-wide text-[9px] sm:text-[15px] break-words">
+                            <span className="min-w-0 uppercase tracking-wide text-[clamp(7px,2.3vw,9px)] sm:text-[15px] leading-tight break-words [overflow-wrap:anywhere]">
                               {clientInfo.address || "cagayan valley, region ii"}
                             </span>
                           </div>
@@ -860,7 +860,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
               <form onSubmit={handleProfileSave} className="space-y-6">
                 <fieldset disabled className="space-y-6">
                 {/* 1. Group Card personal information */}
-                <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-gray-200">
+                <div className="w-full min-w-0 box-border bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-gray-200">
                   <h3 className="text-sm font-black text-blue-900 tracking-wider uppercase border-b border-slate-100 pb-2 mb-4">
                     Personal Information
                   </h3>
