@@ -45,18 +45,33 @@ const loadSavedRoomTimeSlots = () => {
     return [];
   }
 };
+
+const normalizeRoomSettings = (rooms, savedRooms = []) =>
+  rooms.map((room) => {
+    const savedRoom = savedRooms.find((item) => item.name === room.name);
+    return {
+      ...room,
+      timeSlots: room.timeSlots?.length
+        ? room.timeSlots
+        : savedRoom?.timeSlots?.length
+          ? savedRoom.timeSlots
+          : RESERVATION_TIME_OPTIONS,
+    };
+  });
 // Keep the client portal on the same selectable booking periods as the
 // admin/superadmin reservation form.
 const usesReservationTimeDropdown = () => true;
 
 const usesFirstComeFirstServedSlots = (room) =>
-  room === "Discussion Room (BIWAG)" || room === "Discussion Room (MALANA)";
+  room === "Discussion Room (BIUAG)" ||
+  room === "Discussion Room (BIWAG)" ||
+  room === "Discussion Room (MALANA)";
 
 const isActiveReservation = (reservation) =>
   reservation.status === "PENDING" || reservation.status === "APPROVED";
 
 const DEFAULT_ROOMS = [
-  "Discussion Room (BIWAG)",
+  "Discussion Room (BIUAG)",
   "Discussion Room (MALANA)",
   "Conference Room",
   "Ubag Cinema",
@@ -114,13 +129,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
   useEffect(() => {
     Promise.all([api.blockedDays.list(), api.settings.get()]).then(([days, settings]) => {
       setBlockedDays(Object.fromEntries(days.map((day) => [day.date, { status: day.status, reason: day.reason }])));
-      const savedRooms = loadSavedRoomTimeSlots();
-      setRoomSettings(settings.rooms.map((room) => {
-        const savedRoom = savedRooms.find((item) => item.name === room.name);
-        return room.timeSlots?.length || !savedRoom?.timeSlots?.length
-          ? room
-          : { ...room, timeSlots: savedRoom.timeSlots };
-      }));
+      setRoomSettings(normalizeRoomSettings(settings.rooms, loadSavedRoomTimeSlots()));
     }).catch((error) => console.warn("Unable to load reservation settings.", error));
   }, []);
 
