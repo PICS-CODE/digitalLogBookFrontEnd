@@ -334,10 +334,16 @@ export const RFIDScannerSim = ({
 
   // Location select state (dynamic terminal location preset)
   const [terminalLocation, setTerminalLocation] = useState("1F WALK-IN RECEPTION");
+  const [pendingAreaSelection, setPendingAreaSelection] = useState(null);
 
   useEffect(() => {
     setTerminalLocation("1F WALK-IN RECEPTION");
   }, [initialTerminalLocation]);
+
+  const floorAreaOptions = {
+    "1ST FLOOR": ["UBAG CINEMA", "PLAY AREA", "PVAO AREA", "PWD AREA", "READING AREA"],
+    "3RD FLOOR": ["READING AREA", "INTERNET AREA", "MULTIMEDIA ROOM"],
+  };
 
   const getServicesForLocation = (location) => {
     // QR scanners are entrance checkpoints, not service-selection terminals.
@@ -1807,11 +1813,20 @@ export const RFIDScannerSim = ({
                             },
                           ].map((floor) => {
                             const isSelected = terminalLocation === floor.location;
+                            const requiresAreaModal = floor.label === "1ST FLOOR" || floor.label === "3RD FLOOR";
                             return (
                               <button
                                 key={floor.id}
                                 type="button"
                                 onClick={() => {
+                                  if (requiresAreaModal) {
+                                    setPendingAreaSelection({
+                                      title: `SELECT ${floor.label.replace("ST", "ST").replace("RD", "RD")} AREA`,
+                                      location: floor.location,
+                                      options: floorAreaOptions[floor.label] || [],
+                                    });
+                                    return;
+                                  }
                                   handleCheckIn(floor.location, [floor.defaultServiceName]);
                                 }}
                                 className={`flex flex-col items-start p-2.5 rounded-lg text-left transition-all border cursor-pointer ${
@@ -2348,6 +2363,41 @@ export const RFIDScannerSim = ({
           )}
         </div>
       </div>
+
+      {pendingAreaSelection && (
+        <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="bg-slate-950 px-4 py-3 border-b border-slate-800">
+              <h3 className="text-sm font-black uppercase tracking-wider text-cyan-300">
+                {pendingAreaSelection.title}
+              </h3>
+            </div>
+            <div className="p-4 space-y-3">
+              {pendingAreaSelection.options.map((area) => (
+                <button
+                  key={area}
+                  type="button"
+                  onClick={() => {
+                    setSelectedServices([area]);
+                    setPendingAreaSelection(null);
+                    handleCheckIn(pendingAreaSelection.location, [area]);
+                  }}
+                  className="w-full text-left px-3 py-2.5 rounded-lg border border-slate-800 bg-slate-950 hover:border-cyan-500/40 hover:bg-cyan-500/5 text-slate-200 font-bold uppercase tracking-wide text-[10px] transition-all cursor-pointer"
+                >
+                  {area}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setPendingAreaSelection(null)}
+                className="w-full mt-2 px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* QR Registration Modal */}
       {showQrRegistrationModal && (

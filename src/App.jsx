@@ -173,8 +173,8 @@ export default function App() {
         hash === "#/kiosk-standalone"
       ) {
         setCurrentView("STANDALONE");
-        } else if (hash === "#/admin/login" || hash === "#/staff/login") {
-          setCurrentView("ADMIN_LOGIN");
+      } else if (hash === "#/admin/login" || hash === "#/staff/login") {
+        setCurrentView("ADMIN_LOGIN");
       } else if (
         hash === "#/qr" ||
         hash === "#/qrcode" ||
@@ -184,6 +184,8 @@ export default function App() {
         setCurrentView("QR_SCANNER");
       } else if (hash === "#/cplrc-sub-qr") {
         setCurrentView("CPLRC_SUB_QR");
+      } else if (hash === "#/internet-area" || hash === "#/internet") {
+        setCurrentView("INTERNET_AREA");
       } else if (
         hash === "#/admin" ||
         hash === "#/staff" ||
@@ -240,6 +242,8 @@ export default function App() {
       window.location.hash = "#/qr-code";
     } else if (targetView === "CPLRC_SUB_QR") {
       window.location.hash = "#/cplrc-sub-qr";
+    } else if (targetView === "INTERNET_AREA") {
+      window.location.hash = "#/internet-area";
     } else if (targetView === "ADMIN") {
       window.location.hash = "#/admin";
     } else if (targetView === "ADMIN_LOGIN") {
@@ -660,14 +664,14 @@ export default function App() {
               {(currentView !== "CLIENT" && currentView !== "CLIENT_LOGIN" && currentView !== "ADMIN_LOGIN") && (
                 <>
                   <button
-                    onClick={() => changeRoute("KIOSK")}
+                    onClick={() => changeRoute("CPLRC_SUB_QR")}
                     className={`px-3 py-1.5 rounded-md text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${
-                      currentView === "KIOSK"
-                        ? "bg-sky-500 text-slate-950 shadow-sm"
+                      currentView === "CPLRC_SUB_QR"
+                        ? "bg-violet-500 text-white shadow-sm"
                         : "text-slate-350 hover:text-white hover:bg-slate-800/60"
                     }`}
                   >
-                    <Monitor size={12} /> SCANNER
+                    <QrCode size={12} /> CPLRC SUB QR
                   </button>
 
                   <button
@@ -682,39 +686,17 @@ export default function App() {
                   </button>
 
                   <button
-                    onClick={() => changeRoute("CPLRC_SUB_QR")}
+                    onClick={() => changeRoute("INTERNET_AREA")}
                     className={`px-3 py-1.5 rounded-md text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${
-                      currentView === "CPLRC_SUB_QR"
-                        ? "bg-violet-500 text-white shadow-sm"
+                      currentView === "INTERNET_AREA"
+                        ? "bg-blue-500 text-white shadow-sm"
                         : "text-slate-350 hover:text-white hover:bg-slate-800/60"
                     }`}
                   >
-                    <QrCode size={12} /> CPLRC SUB QR
-                  </button>
-
-                  <button
-                    onClick={() => changeRoute(loggedInClient?.role === "admin" || loggedInClient?.role === "superadmin" ? "ADMIN" : "ADMIN_LOGIN")}
-                    className={`px-3 py-1.5 rounded-md text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${
-                      currentView === "ADMIN"
-                        ? "bg-amber-400 text-slate-900 shadow-sm"
-                        : "text-slate-350 hover:text-white hover:bg-slate-800/60"
-                    }`}
-                  >
-                    <ShieldCheck size={12} /> STAFF DESK
+                    <Monitor size={12} /> INTERNET AREA
                   </button>
                 </>
               )}
-
-              <button
-                onClick={() => changeRoute(loggedInClient?.role === "client" ? "CLIENT" : "CLIENT_LOGIN")}
-                className={`px-3 py-1.5 rounded-md text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${
-                  currentView === "CLIENT" || currentView === "CLIENT_LOGIN"
-                        ? "bg-blue-500 text-white shadow-sm"
-                        : "text-slate-350 hover:text-white hover:bg-slate-800/60"
-                }`}
-              >
-                <BookOpen size={12} /> CLIENT PORTAL
-              </button>
             </div>
           </div>
         </header>
@@ -763,7 +745,7 @@ export default function App() {
 
       {/* Main Screen Router layout container */}
       <main className="flex-1 w-full relative">
-        {currentView === "KIOSK" || currentView === "STANDALONE" || currentView === "QR_SCANNER" || currentView === "CPLRC_SUB_QR" ? (
+        {currentView === "KIOSK" || currentView === "STANDALONE" || currentView === "QR_SCANNER" || currentView === "CPLRC_SUB_QR" || currentView === "INTERNET_AREA" ? (
           <div
             className={isStandaloneMode || isQrRegistrationMode ? "py-0 bg-slate-950" : "py-5"}
           >
@@ -790,7 +772,13 @@ export default function App() {
               onUpdateLog={handleUpdateLog}
               onRegisterClick={() => setShowNewUserModal(true)} // This will now open the admin's add user modal
               initialScanMethod={currentView === "QR_SCANNER" || currentView === "CPLRC_SUB_QR" ? "WEBCAM" : "RFID"}
-              initialTerminalLocation={currentView === "CPLRC_SUB_QR" ? "CPLRC SUB" : "1F WALK-IN RECEPTION"}
+              initialTerminalLocation={
+                currentView === "CPLRC_SUB_QR"
+                  ? "CPLRC SUB"
+                  : currentView === "INTERNET_AREA"
+                    ? "INTERNET AREA"
+                    : "1F WALK-IN RECEPTION"
+              }
               onlyQrMode={currentView === "QR_SCANNER" || currentView === "CPLRC_SUB_QR"}
               manualRfidScan={manualRfidScan}
               manualRfid={manualRfid}
