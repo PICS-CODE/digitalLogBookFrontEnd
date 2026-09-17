@@ -445,7 +445,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
           status: "PENDING",
         });
         setBookingSuccess(
-          "Reservation updated successfully! Awaiting review by Jerome Villanueva.",
+          "Reservation updated successfully! Awaiting review by ADMIN Staff .",
         );
         setEditingResId(null);
       } else {
@@ -465,7 +465,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
         };
         savedReservation = await api.reservations.create(newRes);
         setBookingSuccess(
-          "Reservation submitted successfully! Awaiting review by Jerome Villanueva at Staff Desk.",
+          "Reservation submitted successfully! Awaiting review by ADMIN Staff.",
         );
       }
 
