@@ -246,6 +246,9 @@ export const AdminDashboard = ({
   const [newInstInput, setNewInstInput] = useState("");
   const [newPatronInput, setNewPatronInput] = useState("");
   const [newRoomInput, setNewRoomInput] = useState("");
+  const [institutionPage, setInstitutionPage] = useState(1);
+  const [patronTypePage, setPatronTypePage] = useState(1);
+  const settingsItemsPerPage = 10;
   const [rooms, setRooms] = useState(() => {
     const saved = localStorage.getItem("plrc_rooms");
     if (saved) {
@@ -272,6 +275,25 @@ export const AdminDashboard = ({
     return [];
   });
 
+  const institutionTotalPages = Math.max(1, Math.ceil(institutions.length / settingsItemsPerPage));
+  const patronTypeTotalPages = Math.max(1, Math.ceil(patronTypes.length / settingsItemsPerPage));
+  const visibleInstitutions = institutions.slice(
+    (institutionPage - 1) * settingsItemsPerPage,
+    institutionPage * settingsItemsPerPage,
+  );
+  const visiblePatronTypes = patronTypes.slice(
+    (patronTypePage - 1) * settingsItemsPerPage,
+    patronTypePage * settingsItemsPerPage,
+  );
+
+  useEffect(() => {
+    setInstitutionPage((page) => Math.min(page, institutionTotalPages));
+  }, [institutionTotalPages]);
+
+  useEffect(() => {
+    setPatronTypePage((page) => Math.min(page, patronTypeTotalPages));
+  }, [patronTypeTotalPages]);
+
   useEffect(() => {
     api.settings.get().then((settings) => {
       setInstitutions(settings.institutions);
@@ -297,28 +319,46 @@ export const AdminDashboard = ({
 
   const handleAddInstitution = async () => {
     const val = newInstInput.trim();
-    if (val) {
-      if (!institutions.includes(val)) {
-        const saved = await api.settings.addInstitution(val);
-        setInstitutions((current) => [...current, saved.name]);
-        setNewInstInput("");
-      } else {
-        alert("This institution is already in your list.");
-      }
+    if (!val) {
+      await Swal.fire({ icon: "warning", title: "Institution Name Required", text: "Please enter an institution name.", confirmButtonColor: "#2563eb" });
+      return;
+    }
+    if (institutions.some((item) => item.toLowerCase() === val.toLowerCase())) {
+      await Swal.fire({ icon: "warning", title: "Already Exists", text: "This institution is already in your list.", confirmButtonColor: "#2563eb" });
+      return;
+    }
+    try {
+      const saved = await api.settings.addInstitution(val);
+      const nextInstitutions = [...institutions, saved.name];
+      setInstitutions(nextInstitutions);
+      setInstitutionPage(Math.ceil(nextInstitutions.length / settingsItemsPerPage));
+      setNewInstInput("");
+      await Swal.fire({ icon: "success", title: "Institution Added", text: `${saved.name} was saved successfully.`, confirmButtonColor: "#2563eb" });
+    } catch (error) {
+      await Swal.fire({ icon: "error", title: "Unable to Save Institution", text: error.message || "The institution could not be saved.", confirmButtonColor: "#2563eb" });
     }
   };
 
   const handleAddPatronType = async () => {
     const val = newPatronInput.trim();
-    if (val) {
-      if (!patronTypes.includes(val)) {
-        const saved = await api.settings.addPatronType(val);
-        setPatronTypes((current) => [...current, saved.name]);
-        localStorage.setItem("plrc_patron_types", JSON.stringify([...patronTypes, saved.name]));
-        setNewPatronInput("");
-      } else {
-        alert("This patron type is already in your list.");
-      }
+    if (!val) {
+      await Swal.fire({ icon: "warning", title: "Patron Type Required", text: "Please enter a patron type.", confirmButtonColor: "#2563eb" });
+      return;
+    }
+    if (patronTypes.some((item) => item.toLowerCase() === val.toLowerCase())) {
+      await Swal.fire({ icon: "warning", title: "Already Exists", text: "This patron type is already in your list.", confirmButtonColor: "#2563eb" });
+      return;
+    }
+    try {
+      const saved = await api.settings.addPatronType(val);
+      const nextPatronTypes = [...patronTypes, saved.name];
+      setPatronTypes(nextPatronTypes);
+      setPatronTypePage(Math.ceil(nextPatronTypes.length / settingsItemsPerPage));
+      localStorage.setItem("plrc_patron_types", JSON.stringify(nextPatronTypes));
+      setNewPatronInput("");
+      await Swal.fire({ icon: "success", title: "Patron Type Added", text: `${saved.name} was saved successfully.`, confirmButtonColor: "#2563eb" });
+    } catch (error) {
+      await Swal.fire({ icon: "error", title: "Unable to Save Patron Type", text: error.message || "The patron type could not be saved.", confirmButtonColor: "#2563eb" });
     }
   };
 
@@ -3451,7 +3491,7 @@ export const AdminDashboard = ({
                           Registered Institutions ({institutions.length})
                         </div>
                         <div className="divide-y divide-gray-100 max-h-[400px] overflow-y-auto">
-                          {institutions.map((inst, index) => (
+                          {visibleInstitutions.map((inst, index) => (
                             <div key={index} className="px-4 py-3.5 flex items-center justify-between hover:bg-slate-50 transition-colors group">
                               <span className="text-xs font-bold text-slate-700 uppercase">{inst}</span>
                               <button
@@ -3481,6 +3521,31 @@ export const AdminDashboard = ({
                               </button>
                             </div>
                           ))}
+                        </div>
+                        <div className="flex items-center justify-between border-t border-gray-100 px-4 py-3">
+                          <span className="text-[10px] font-bold text-slate-400">
+                            Page {institutionPage} of {institutionTotalPages}
+                          </span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setInstitutionPage((page) => Math.max(1, page - 1))}
+                              disabled={institutionPage === 1}
+                              className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                              title="Previous institutions page"
+                            >
+                              <ChevronLeft size={15} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setInstitutionPage((page) => Math.min(institutionTotalPages, page + 1))}
+                              disabled={institutionPage === institutionTotalPages}
+                              className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                              title="Next institutions page"
+                            >
+                              <ChevronRight size={15} />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -3519,7 +3584,7 @@ export const AdminDashboard = ({
                           Registered Patron Levels ({patronTypes.length})
                         </div>
                         <div className="divide-y divide-gray-100 max-h-[400px] overflow-y-auto">
-                          {patronTypes.map((type, index) => (
+                          {visiblePatronTypes.map((type, index) => (
                             <div key={index} className="px-4 py-3.5 flex items-center justify-between hover:bg-slate-50 transition-colors group">
                               <span className="text-xs font-bold text-slate-700 uppercase">{type}</span>
                               <button
@@ -3553,6 +3618,31 @@ export const AdminDashboard = ({
                               </button>
                             </div>
                           ))}
+                        </div>
+                        <div className="flex items-center justify-between border-t border-gray-100 px-4 py-3">
+                          <span className="text-[10px] font-bold text-slate-400">
+                            Page {patronTypePage} of {patronTypeTotalPages}
+                          </span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setPatronTypePage((page) => Math.max(1, page - 1))}
+                              disabled={patronTypePage === 1}
+                              className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                              title="Previous patron types page"
+                            >
+                              <ChevronLeft size={15} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPatronTypePage((page) => Math.min(patronTypeTotalPages, page + 1))}
+                              disabled={patronTypePage === patronTypeTotalPages}
+                              className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                              title="Next patron types page"
+                            >
+                              <ChevronRight size={15} />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
