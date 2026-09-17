@@ -336,6 +336,65 @@ export const AdminDashboard = ({
     setNewRoomInput("");
   };
 
+  const handleEditRoom = (room) => {
+    setRoomEditor({
+      originalName: room.name,
+      name: room.name,
+      enabled: room.enabled,
+      disabledReason: room.disabledReason || "",
+      timeSlots: (room.timeSlots?.length ? room.timeSlots : getDefaultRoomTimeSlots(room.name)).join(", "),
+    });
+  };
+
+  const handleSaveRoom = async () => {
+    const name = roomEditor?.name.trim();
+    const timeSlots = roomEditor?.timeSlots
+      .split(",")
+      .map((slot) => slot.trim())
+      .filter(Boolean);
+    if (!name) {
+      alert("Room name is required.");
+      return;
+    }
+    if (!timeSlots?.length) {
+      alert("Please enter at least one time slot.");
+      return;
+    }
+    if (rooms.some((room) => room.name.toLowerCase() === name.toLowerCase() && room.name !== roomEditor.originalName)) {
+      alert("This room is already in the settings list.");
+      return;
+    }
+    await saveSettings(institutions, patronTypes, rooms.map((room) =>
+      room.name === roomEditor.originalName
+        ? { ...room, name, enabled: roomEditor.enabled, disabledReason: roomEditor.disabledReason.trim(), timeSlots }
+        : room,
+    ));
+    setRoomEditor(null);
+  };
+
+  const handleDeleteRoom = async (room) => {
+    const result = await Swal.fire({
+      title: "Delete room?",
+      text: `Are you sure you want to remove "${room.name}" from the booking rooms?`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Delete",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "#e11d48",
+      cancelButtonColor: "#64748b",
+      reverseButtons: true,
+    });
+    if (!result.isConfirmed) return;
+    try {
+      await api.settings.removeRoom(room.name);
+      const nextRooms = rooms.filter((item) => item.name !== room.name);
+      setRooms(nextRooms);
+      localStorage.setItem("plrc_rooms", JSON.stringify(nextRooms));
+    } catch (error) {
+      alert(error.message || "Unable to delete room.");
+    }
+  };
+
   const toggleRoomAvailability = async (roomName) => {
     const selectedRoom = rooms.find((room) => room.name === roomName);
     if (!selectedRoom) return;
@@ -540,6 +599,7 @@ export const AdminDashboard = ({
   const [reservationRejectReason, setReservationRejectReason] = useState("");
   const [roomTimeSlotEditor, setRoomTimeSlotEditor] = useState(null);
   const [roomDisableModal, setRoomDisableModal] = useState(null);
+  const [roomEditor, setRoomEditor] = useState(null);
   const [reservationPage, setReservationPage] = useState(1);
   const reservationsRowsPerPage = 10;
   const adminSelectedRoom = rooms.find((room) => room.name === newResRoom);
@@ -3546,6 +3606,22 @@ export const AdminDashboard = ({
                                 >
                                   Configure Times
                                 </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditRoom(room)}
+                                  className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-colors cursor-pointer"
+                                  title={`Edit ${room.name}`}
+                                >
+                                  <Pencil size={14} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteRoom(room)}
+                                  className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition-colors cursor-pointer"
+                                  title={`Delete ${room.name}`}
+                                >
+                                  <Trash2 size={14} />
+                                </button>
                                 <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-md ${room.enabled ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-700"}`}>
                                   {room.enabled ? "Available" : "Disabled"}
                                 </span>
@@ -3569,6 +3645,90 @@ export const AdminDashboard = ({
           )}
         </div>
       </div>
+
+      {roomEditor && (
+        <div
+          className="fixed inset-0 z-[97] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setRoomEditor(null);
+          }}
+        >
+          <div className="w-full max-w-lg my-auto bg-white rounded-2xl shadow-2xl border border-blue-100 overflow-hidden">
+            <div className="bg-gradient-to-r from-[#1E3A8A] to-blue-600 px-5 py-4 text-white flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-blue-100">Edit Room</p>
+                <h3 className="text-lg font-black mt-1">Room Settings</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRoomEditor(null)}
+                className="p-1.5 rounded-lg text-blue-100 hover:text-white hover:bg-white/15 transition-colors"
+                title="Close room editor"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1.5">Room Name</label>
+                <input
+                  autoFocus
+                  value={roomEditor.name}
+                  onChange={(event) => setRoomEditor((current) => ({ ...current, name: event.target.value }))}
+                  className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-800 bg-slate-50 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1.5">Time Slots</label>
+                <textarea
+                  value={roomEditor.timeSlots}
+                  onChange={(event) => setRoomEditor((current) => ({ ...current, timeSlots: event.target.value }))}
+                  rows={4}
+                  placeholder="8:00am-9:00am, 9:00am-10:00am"
+                  className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-800 bg-slate-50 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+                />
+                <p className="text-[10px] text-slate-400 mt-1.5">Separate each available time slot with a comma.</p>
+              </div>
+              <label className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={roomEditor.enabled}
+                  onChange={(event) => setRoomEditor((current) => ({ ...current, enabled: event.target.checked }))}
+                  className="h-4 w-4 accent-blue-600"
+                />
+                Room is available for booking
+              </label>
+              {!roomEditor.enabled && (
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1.5">Unavailable Reason</label>
+                  <input
+                    value={roomEditor.disabledReason}
+                    onChange={(event) => setRoomEditor((current) => ({ ...current, disabledReason: event.target.value }))}
+                    placeholder="Maintenance or reserved event"
+                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-800 bg-slate-50 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+              )}
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setRoomEditor(null)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-[10px] font-black uppercase tracking-wider hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveRoom}
+                  className="px-4 py-2 rounded-xl bg-blue-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-blue-700 shadow-sm"
+                >
+                  Save Room
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {roomDisableModal && (
         <div
