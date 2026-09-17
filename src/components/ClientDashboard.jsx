@@ -698,7 +698,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
               <div className="flex flex-col xl:flex-row items-center xl:items-stretch justify-center gap-6">
                 
                 {/* ACCORDION/PREVIEW: THE HIGH-FIDELITY OFFICIAL ACCREDITED PLRC ACCESS CARD */}
-                <div className="relative w-full max-w-[580px] aspect-[1.58/1] bg-white rounded-2xl shadow-xl border border-slate-300/80 overflow-hidden flex flex-col p-2 sm:p-4 select-none text-slate-900 transition-transform duration-300 hover:scale-[1.01]">
+                <div className="relative w-full max-w-[580px] min-h-[360px] sm:min-h-0 sm:aspect-[1.58/1] bg-white rounded-2xl shadow-xl border border-slate-300/80 overflow-hidden flex flex-col p-2 sm:p-4 select-none text-slate-900 transition-transform duration-300 hover:scale-[1.01]">
                   {/* ID Background Image */}
                   <img 
                     src="/images/id-card.png" 
@@ -730,7 +730,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
                       <div className="text-[8px] font-mono tracking-widest text-emerald-850 font-black uppercase leading-tight mt-0.5">
                         Province of Cagayan
                       </div>
-                      <div className="text-[12px] font-sans text-[#1D4ED8] tracking-tight font-black leading-tight">
+                        <div className="text-[8px] sm:text-[12px] font-sans text-[#1D4ED8] tracking-tight font-black leading-tight">
                         CAGAYAN PROVINCIAL LEARNING AND RESOURCE CENTER
                       </div>
                     </div>
@@ -748,7 +748,7 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
                   {/* Card Content Layout */}
                   <div className="flex-1 flex gap-4 items-stretch overflow-hidden relative z-20">
                     {/* Left side: Client profile photo inside exact frame */}
-                    <div className="w-20 sm:w-30 h-20 sm:h-30 aspect-[3/4] bg-slate-100 border-2 border-dashed border-slate-300 rounded-xl overflow-hidden flex flex-col items-center justify-center relative shrink-0">
+                    <div className="w-16 h-20 sm:w-28 sm:h-36 md:w-32 md:h-40 aspect-[3/4] bg-slate-100 border-2 border-dashed border-slate-300 rounded-xl overflow-hidden flex flex-col items-center justify-center relative shrink-0">
                       {clientInfo.photoUrl ? (
                         <img
                           src={clientInfo.photoUrl}
@@ -768,64 +768,64 @@ export const ClientDashboard = ({ users, loggedInClient, onLogout }) => {
 
                     {/* Right side: Field values with actual arrows prefixed: ▶ */}
                     <div className="flex-1 flex flex-col justify-around text-slate-800 text-[9px] sm:text-[11px] font-bold py-1 min-w-0 p-1 sm:p-2.5 rounded-xl">
-                      <div className="flex items-center gap-1.5 truncate">
-                        <span className="text-[9px] sm:text-[15px] uppercase tracking-wider font-mono text-slate-500 w-16 sm:w-24 shrink-0">
+                      <div className="flex items-start gap-1.5 min-w-0">
+                        <span className="text-[8px] sm:text-[15px] uppercase tracking-wider font-mono text-slate-500 w-14 sm:w-24 shrink-0">
                           LAST NAME
                         </span>
-                        <div className="flex items-center gap-1 truncate text-slate-950 font-black">
+                        <div className="flex items-start gap-1 min-w-0 text-slate-950 font-black">
                           <span className="text-blue-600">▶</span>
-                          <span className="uppercase text-[10px] sm:text-[15px] tracking-wide">
+                          <span className="uppercase text-[9px] sm:text-[15px] tracking-wide break-words">
                             {clientInfo.lastName}
                           </span>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1.5 truncate">
-                        <span className="text-[9px] sm:text-[15px] uppercase tracking-wider font-mono text-slate-500 w-16 sm:w-24 shrink-0">
+                      <div className="flex items-start gap-1.5 min-w-0">
+                        <span className="text-[8px] sm:text-[15px] uppercase tracking-wider font-mono text-slate-500 w-14 sm:w-24 shrink-0">
                           FIRST NAME
                         </span>
-                        <div className="flex items-center gap-1 truncate text-slate-950 font-black">
+                        <div className="flex items-start gap-1 min-w-0 text-slate-950 font-black">
                           <span className="text-blue-600">▶</span>
-                          <span className="uppercase text-[10px] sm:text-[15px] tracking-wide">
+                          <span className="uppercase text-[9px] sm:text-[15px] tracking-wide break-words">
                             {clientInfo.givenName}
                           </span>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1 truncate">
-                        <span className="text-[9px] sm:text-[15px] uppercase tracking-wider font-mono text-slate-500 w-16 sm:w-24 shrink-0">
+                      <div className="flex items-start gap-1 min-w-0">
+                        <span className="text-[8px] sm:text-[15px] uppercase tracking-wider font-mono text-slate-500 w-14 sm:w-24 shrink-0">
                           MIDDLE NAME
                         </span>
-                        <div className="flex items-center gap-1.5 truncate text-slate-950 font-black">
+                        <div className="flex items-start gap-1.5 min-w-0 text-slate-950 font-black">
                           <span className="text-blue-600">▶</span>
-                          <span className="uppercase text-[10px] sm:text-[15px] tracking-wide">
+                          <span className="uppercase text-[9px] sm:text-[15px] tracking-wide break-words">
                             {clientInfo.middleName || "N/A"}
                           </span>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1.5 truncate">
-                        <span className="text-[9px] sm:text-[15px] uppercase tracking-wider font-mono text-slate-500 w-16 sm:w-24 shrink-0">
+                      <div className="flex items-start gap-1.5 min-w-0">
+                        <span className="text-[8px] sm:text-[15px] uppercase tracking-wider font-mono text-slate-500 w-14 sm:w-24 shrink-0">
                           BIRTHDAY
                         </span>
-                        <div className="flex items-center gap-1 text-slate-950 font-bold">
+                        <div className="flex items-start gap-1 min-w-0 text-slate-950 font-bold">
                           <span className="text-blue-600">▶</span>
-                          <span className="uppercase text-[10px] sm:text-[15px] tracking-wide">
+                          <span className="uppercase text-[9px] sm:text-[15px] tracking-wide break-words">
                             {clientInfo.birthday || "YYYY-MM-DD"}
                           </span>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1.5 truncate">
+                      <div className="flex items-start gap-1.5 min-w-0">
                        <div className="flex flex-col">
                           <span className="text-[9px] sm:text-[15px] uppercase tracking-wider font-mono text-slate-500">
                             ADDRESS 
                           </span>
 
-                          <div className="flex items-center gap-1 text-slate-950 font-medium">
+                          <div className="flex items-start gap-1 min-w-0 text-slate-950 font-medium">
                             <span className="text-blue-600">▶</span>
 
-                            <span className="uppercase tracking-wide text-[10px] sm:text-[15px]">
+                            <span className="uppercase tracking-wide text-[9px] sm:text-[15px] break-words">
                               {clientInfo.address || "cagayan valley, region ii"}
                             </span>
                           </div>
