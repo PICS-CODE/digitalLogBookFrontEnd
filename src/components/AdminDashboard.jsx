@@ -275,6 +275,10 @@ export const AdminDashboard = ({
       if (storedUser) {
         const parsedUser = JSON.parse(storedUser);
         if (parsedUser && (parsedUser.role === "superadmin" || parsedUser.role === "admin")) {
+          const exactMatch = users.find(
+            (user) => user.id === parsedUser.id || user.rfid === parsedUser.rfid,
+          );
+          if (exactMatch) return exactMatch;
           return parsedUser;
         }
       }
@@ -283,8 +287,8 @@ export const AdminDashboard = ({
     }
 
     return users.find((user) => user.role === effectiveRole) ||
-      users.find((user) => user.role === "superadmin") ||
       users.find((user) => user.role === "admin") ||
+      users.find((user) => user.role === "superadmin") ||
       null;
   })();
 

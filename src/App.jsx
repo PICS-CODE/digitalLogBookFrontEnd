@@ -191,9 +191,17 @@ export default function App() {
         hash === "#/staff" ||
         hash === "#/staff-desk"
       ) {
-        // Check sessionStorage first to avoid flicker or empty role state
-        const storedRole = sessionStorage.getItem("plrc_admin_role") || adminRole;
-        
+        // Prefer the exact saved session user over any stale role value.
+        const storedUser = (() => {
+          try {
+            const raw = sessionStorage.getItem("plrc_current_user");
+            return raw ? JSON.parse(raw) : null;
+          } catch (_) {
+            return null;
+          }
+        })();
+        const storedRole = storedUser?.role || sessionStorage.getItem("plrc_admin_role") || adminRole;
+
         if (storedRole) {
           setAdminRole(storedRole);
         } else if (!adminRole) {
@@ -361,16 +369,19 @@ export default function App() {
 
   // Unified Login Success Handler
   const handleLoginSuccess = (user) => {
-    setLoggedInClient(user);
-    sessionStorage.setItem("plrc_current_user", JSON.stringify(user));
-    
-    if (user.role === "superadmin" || user.role === "admin") {
-      setAdminRole(user.role);
-      sessionStorage.setItem("plrc_admin_role", user.role);
+    const resolvedUser = user && (user.role === "superadmin" || user.role === "admin") ? user : user;
+    setLoggedInClient(resolvedUser);
+    sessionStorage.setItem("plrc_current_user", JSON.stringify(resolvedUser));
+
+    if (resolvedUser.role === "superadmin" || resolvedUser.role === "admin") {
+      setAdminRole(resolvedUser.role);
+      sessionStorage.setItem("plrc_admin_role", resolvedUser.role);
       sessionStorage.setItem("plrc_admin_is_logged", "true");
       changeRoute("ADMIN");
     } else {
       setAdminRole(null);
+      sessionStorage.removeItem("plrc_admin_role");
+      sessionStorage.removeItem("plrc_admin_is_logged");
       changeRoute("CLIENT");
     }
   };
