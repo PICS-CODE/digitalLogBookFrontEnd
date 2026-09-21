@@ -260,6 +260,42 @@ export const AdminDashboard = ({
   // Get the effective role from sessionStorage if prop is temporarily null during route transition
   const effectiveRole = adminRole || sessionStorage.getItem("plrc_admin_role");
 
+  const getAdminDisplayName = (user) => {
+    if (!user) return "Admin";
+    const firstName = user.givenName || user.firstName || "";
+    const middleName = user.middleName || "";
+    const lastName = user.lastName || "";
+    const fullName = [firstName, middleName, lastName].filter(Boolean).join(" ");
+    return fullName || "Admin";
+  };
+
+  const loggedInAdminUser = (() => {
+    try {
+      const storedUser = sessionStorage.getItem("plrc_current_user");
+      if (storedUser) {
+        const parsedUser = JSON.parse(storedUser);
+        if (parsedUser && (parsedUser.role === "superadmin" || parsedUser.role === "admin")) {
+          return parsedUser;
+        }
+      }
+    } catch (_) {
+      // Fall through to the user list below.
+    }
+
+    return users.find((user) => user.role === effectiveRole) ||
+      users.find((user) => user.role === "superadmin") ||
+      users.find((user) => user.role === "admin") ||
+      null;
+  })();
+
+  const loggedInAdminName = getAdminDisplayName(loggedInAdminUser);
+  const loggedInAdminInitials = loggedInAdminName
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || "")
+    .join("") || "A";
+
   // Navigation tabs in admin
   const [sidebarTab, setSidebarTab] = useState(() => {
     if (effectiveRole === "admin") return "reservations";
@@ -1633,14 +1669,14 @@ export const AdminDashboard = ({
         <div className="hidden lg:flex mt-auto px-4 pt-4 border-t border-slate-100 items-center justify-between">
           <div className="flex items-center gap-2 overflow-hidden">
             <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold shrink-0">
-              J
+              {loggedInAdminInitials}
             </div>
             <div className="overflow-hidden">
               <span className="text-[10px] font-bold text-slate-500 font-mono block leading-none">
                 OFFICER LOGGED
               </span>
               <span className="text-xs font-black text-slate-800 truncate block mt-1">
-                Jerome Villanueva
+                {loggedInAdminName}
               </span>
             </div>
           </div>
@@ -1670,13 +1706,15 @@ export const AdminDashboard = ({
 
           <div className="flex items-center gap-2 sm:gap-4 text-xs font-mono text-slate-500 shrink-0">
           <span className="bg-blue-100 text-blue-800 font-black px-2 py-0.5 rounded-full text-[10px]">
-            {adminRole === "superadmin" ? "SUPERADMIN" : "STAFF ADMIN"} ACCESS
+            {effectiveRole === "superadmin" ? "SUPERADMIN" : "STAFF ADMIN"} ACCESS
             </span>
             <div className="hidden sm:flex items-center gap-1">
               <Users size={14} className="text-blue-600" />
               <span>
                 User:{" "}
-                <strong className="text-slate-800 font-sans">Jerome</strong>
+                <strong className="text-slate-800 font-sans">
+                  {loggedInAdminName.split(" ")[0] || "Admin"}
+                </strong>
               </span>
             </div>
           </div>
