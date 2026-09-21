@@ -191,7 +191,8 @@ export default function App() {
         hash === "#/staff" ||
         hash === "#/staff-desk"
       ) {
-        // Prefer the exact saved session user over any stale role value.
+        // Always prefer the exact saved session user. This avoids stale superadmin
+        // role data from overriding a newly logged-in admin account.
         const storedUser = (() => {
           try {
             const raw = sessionStorage.getItem("plrc_current_user");
@@ -200,9 +201,12 @@ export default function App() {
             return null;
           }
         })();
-        const storedRole = storedUser?.role || sessionStorage.getItem("plrc_admin_role") || adminRole;
 
-        if (storedRole) {
+        const storedRole = storedUser?.role || adminRole || sessionStorage.getItem("plrc_admin_role");
+
+        if (storedUser && (storedUser.role === "superadmin" || storedUser.role === "admin")) {
+          setAdminRole(storedUser.role);
+        } else if (storedRole) {
           setAdminRole(storedRole);
         } else if (!adminRole) {
           window.location.hash = "#/admin/login";
@@ -370,6 +374,10 @@ export default function App() {
   // Unified Login Success Handler
   const handleLoginSuccess = (user) => {
     const resolvedUser = user && (user.role === "superadmin" || user.role === "admin") ? user : user;
+    // Clear any stale admin session before storing the active user so previous
+    // superadmin state cannot override a newly logged-in staff admin.
+    sessionStorage.removeItem("plrc_admin_role");
+    sessionStorage.removeItem("plrc_admin_is_logged");
     setLoggedInClient(resolvedUser);
     sessionStorage.setItem("plrc_current_user", JSON.stringify(resolvedUser));
 
