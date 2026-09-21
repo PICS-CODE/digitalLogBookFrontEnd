@@ -259,6 +259,7 @@ export const AdminDashboard = ({
 }) => {
   // Get the effective role from sessionStorage if prop is temporarily null during route transition
   const effectiveRole = adminRole || sessionStorage.getItem("plrc_admin_role");
+  const canManageCalendarDays = effectiveRole === "admin" || effectiveRole === "superadmin";
 
   const getAdminDisplayName = (user) => {
     if (!user) return "Admin";
@@ -302,7 +303,7 @@ export const AdminDashboard = ({
 
   // Navigation tabs in admin
   const [sidebarTab, setSidebarTab] = useState(() => {
-    if (effectiveRole === "admin") return "reservations";
+    if (effectiveRole === "admin") return "visitors";
     return "dashboard";
   });
   
@@ -576,7 +577,7 @@ export const AdminDashboard = ({
   // Auto-switch tab if role updates later (e.g. from null to admin)
   useEffect(() => {
     if (effectiveRole === "admin" && sidebarTab === "dashboard") {
-      setSidebarTab("reservations");
+      setSidebarTab("visitors");
     }
   }, [effectiveRole, sidebarTab]);
 
@@ -769,7 +770,7 @@ export const AdminDashboard = ({
 
   // Close Day operation
   const handleCloseDay = async () => {
-    if (!targetBlockDate) return;
+    if (!canManageCalendarDays || !targetBlockDate) return;
     const day = { id: targetBlockDate, date: targetBlockDate, status: targetBlockStatus, reason: targetBlockReason.trim() || "Facility Closed" };
     try { await api.blockedDays.update(day); } catch { await api.blockedDays.create(day); }
     setBlockedDays((prev) => ({ ...prev, [targetBlockDate]: { status: day.status, reason: day.reason } }));
@@ -778,7 +779,7 @@ export const AdminDashboard = ({
 
   // Open Day operation
   const handleOpenDay = async () => {
-    if (!targetBlockDate) return;
+    if (!canManageCalendarDays || !targetBlockDate) return;
     await api.blockedDays.remove(targetBlockDate);
     setBlockedDays((prev) => {
       const copy = { ...prev };
@@ -1615,7 +1616,7 @@ export const AdminDashboard = ({
             >
               <span className="flex items-center gap-3">
                 <Users size={16} />
-                Visitors
+                {effectiveRole === "admin" ? "Calendar" : "Visitors"}
               </span>
             </button>
           )}
@@ -1701,7 +1702,7 @@ export const AdminDashboard = ({
           <div>
             <h1 className="text-sm sm:text-base font-black text-slate-850 tracking-tight uppercase flex items-center gap-2">
               {sidebarTab === "dashboard" && "CPLRC Dashboard"}
-              {sidebarTab === "visitors" && "Patrons & Logs Administration"}
+              {sidebarTab === "visitors" && (effectiveRole === "admin" ? "Calendar" : "Patrons & Logs Administration")}
               {sidebarTab === "reservations" && "Room & Computer Bookings"}
               {sidebarTab === "settings" && "System Configuration"}
               {sidebarTab === "e-resources" && "E-Resources Management"}
@@ -1734,23 +1735,10 @@ export const AdminDashboard = ({
           {/* ========================================================= */}
           {/* VIEW: SIDEBAR TAB - RESERVATIONS CALENDAR HOME (DASHBOARD) */}
           {/* ========================================================= */}
-          {sidebarTab === "dashboard" && (effectiveRole === "superadmin" || !effectiveRole) && (
+          {((sidebarTab === "dashboard" && (effectiveRole === "superadmin" || !effectiveRole)) || (sidebarTab === "visitors" && effectiveRole === "admin")) && (
             <div className="space-y-6">
-              {/* Dynamic visitors and reservations analytics cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-6 select-none">
-                {/* Total Visitors logbook analytics card */}
-                <div
-                  id="stat-total-visitors"
-                  className="bg-white p-4 sm:p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col items-center justify-center text-center"
-                >
-                  <h3 className="text-lg font-extrabold text-[#1E3A8A] tracking-tight text-center uppercase">
-                    Total Visitors
-                  </h3>
-                  <p className="text-4xl font-black text-slate-900 mt-2">
-                    {totalMembers}
-                  </p>
-                </div>
-
+              {/* Dynamic reservations analytics card */}
+              <div className="grid grid-cols-1 sm:grid-cols-1 gap-3 sm:gap-6 select-none">
                 {/* Pending active reservations counter card */}
                 <div
                   id="stat-pending-res"
@@ -1766,67 +1754,69 @@ export const AdminDashboard = ({
               </div>
 
               {/* Day controller actions: Close calendar date slots dynamically */}
-              <div className="bg-white p-3 sm:p-3 rounded-xl border border-gray-200 shadow-sm">
-                <span className="text-[10px] font-bold text-[#1E3A8A] uppercase tracking-widest font-mono">
-                  STAFF SCHEDULER CONTROLLER
-                </span>
+              {canManageCalendarDays && (
+                <div className="bg-white p-3 sm:p-3 rounded-xl border border-gray-200 shadow-sm">
+                  <span className="text-[10px] font-bold text-[#1E3A8A] uppercase tracking-widest font-mono">
+                    STAFF SCHEDULER CONTROLLER
+                  </span>
 
-                <div className="flex flex-col md:flex-row md:items-end gap-2 mt-2">
-                  <div className="flex-auto w-full md:max-w-[160px]">
-                    <label className="text-[9px] font-mono font-bold text-slate-400 uppercase block mb-1">
-                      Target calendar date picker
-                    </label>
-                    <input
-                      type="date"
-                      value={targetBlockDate}
-                      onChange={(e) => setTargetBlockDate(e.target.value)}
-                      className="border border-gray-350 rounded-lg px-2 py-1 text-[11px] w-full focus:ring-1 focus:ring-blue-500 focus:outline-none text-gray-700 bg-slate-50 font-mono"
-                    />
-                  </div>
+                  <div className="flex flex-col md:flex-row md:items-end gap-2 mt-2">
+                    <div className="flex-auto w-full md:max-w-[160px]">
+                      <label className="text-[9px] font-mono font-bold text-slate-400 uppercase block mb-1">
+                        Target calendar date picker
+                      </label>
+                      <input
+                        type="date"
+                        value={targetBlockDate}
+                        onChange={(e) => setTargetBlockDate(e.target.value)}
+                        className="border border-gray-350 rounded-lg px-2 py-1 text-[11px] w-full focus:ring-1 focus:ring-blue-500 focus:outline-none text-gray-700 bg-slate-50 font-mono"
+                      />
+                    </div>
 
-                  <div className="flex-auto w-full md:max-w-[420px]">
-                    <label className="text-[9px] font-mono font-bold text-slate-400 uppercase block mb-1 font-sans">
-                      Reason / scheduled calendar notation description
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. System Maintenance, Holiday event, CSU Class Tour (Leave empty to open)"
-                      value={targetBlockReason}
-                      onChange={(e) => setTargetBlockReason(e.target.value)}
-                      className="border border-gray-350 rounded-lg px-2 py-1 text-[11px] w-full focus:ring-1 focus:ring-blue-500 focus:outline-none text-slate-800 bg-slate-50"
-                    />
-                  </div>
+                    <div className="flex-auto w-full md:max-w-[420px]">
+                      <label className="text-[9px] font-mono font-bold text-slate-400 uppercase block mb-1 font-sans">
+                        Reason / scheduled calendar notation description
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. System Maintenance, Holiday event, CSU Class Tour (Leave empty to open)"
+                        value={targetBlockReason}
+                        onChange={(e) => setTargetBlockReason(e.target.value)}
+                        className="border border-gray-350 rounded-lg px-2 py-1 text-[11px] w-full focus:ring-1 focus:ring-blue-500 focus:outline-none text-slate-800 bg-slate-50"
+                      />
+                    </div>
 
-                  <div className="flex-auto w-full md:max-w-[180px]">
-                    <label className="text-[9px] font-mono font-bold text-slate-400 uppercase block mb-1 font-sans">
-                      Calendar status
-                    </label>
-                    <select
-                      value={targetBlockStatus}
-                      onChange={(e) => setTargetBlockStatus(e.target.value)}
-                      className="border border-gray-350 rounded-lg px-2 py-1 text-[11px] w-full focus:ring-1 focus:ring-blue-500 focus:outline-none text-slate-800 bg-slate-50"
-                    >
-                      <option value="closed">Maintenance Blocked (Orange)</option>
-                      <option value="holiday">Holiday Closed (Red)</option>
-                    </select>
-                  </div>
+                    <div className="flex-auto w-full md:max-w-[180px]">
+                      <label className="text-[9px] font-mono font-bold text-slate-400 uppercase block mb-1 font-sans">
+                        Calendar status
+                      </label>
+                      <select
+                        value={targetBlockStatus}
+                        onChange={(e) => setTargetBlockStatus(e.target.value)}
+                        className="border border-gray-350 rounded-lg px-2 py-1 text-[11px] w-full focus:ring-1 focus:ring-blue-500 focus:outline-none text-slate-800 bg-slate-50"
+                      >
+                        <option value="closed">Maintenance Blocked (Orange)</option>
+                        <option value="holiday">Holiday Closed (Red)</option>
+                      </select>
+                    </div>
 
-                  <div className="flex gap-2 w-full md:w-auto mt-2 md:mt-0 shrink-0">
-                    <button
-                      onClick={handleCloseDay}
-                      className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold text-[11px] rounded-md uppercase tracking-wide transition-all cursor-pointer shadow-sm"
-                    >
-                      Close Day
-                    </button>
-                    <button
-                      onClick={handleOpenDay}
-                      className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] rounded-md uppercase tracking-wide transition-all cursor-pointer shadow-sm"
-                    >
-                      Open Day
-                    </button>
+                    <div className="flex gap-2 w-full md:w-auto mt-2 md:mt-0 shrink-0">
+                      <button
+                        onClick={handleCloseDay}
+                        className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold text-[11px] rounded-md uppercase tracking-wide transition-all cursor-pointer shadow-sm"
+                      >
+                        Close Day
+                      </button>
+                      <button
+                        onClick={handleOpenDay}
+                        className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] rounded-md uppercase tracking-wide transition-all cursor-pointer shadow-sm"
+                      >
+                        Open Day
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               {/* MONTHLY CALENDAR GRID BOARD - MAY 2026 DEFAULT */}
               <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm max-w-[2000px] mx-auto">
